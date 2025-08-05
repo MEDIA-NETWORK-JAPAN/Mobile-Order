@@ -49,7 +49,18 @@
       "Bash(npm run test:*)",
       "Bash(npm run build:*)",
       "Bash(npm ls:*)",
-      "Bash(npx:*)"
+      "Bash(npx:*)",
+      "Bash(sail exec mysql:*)",
+      "Bash(./vendor/bin/sail exec mysql:*)",
+      "Bash(./vendor/bin/sail artisan migrate:fresh)",
+      "Bash(./vendor/bin/sail composer:*)",
+      "Bash(./vendor/bin/sail exec laravel.test git config:*)",
+      "Bash(./vendor/bin/sail exec laravel.test composer:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(./vendor/bin/sail artisan --version)",
+      "Bash(ls:*)",
+      "Bash(find:*)"
     ],
     "deny": [
       "Bash(sudo:*)",
