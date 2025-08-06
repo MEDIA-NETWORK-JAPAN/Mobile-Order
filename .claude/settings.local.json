@@ -61,7 +61,8 @@
       "Bash(./vendor/bin/sail artisan --version)",
       "Bash(ls:*)",
       "Bash(find:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [
       "Bash(sudo:*)",
