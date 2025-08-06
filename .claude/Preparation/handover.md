@@ -61,14 +61,14 @@ mobile-order-system/
 │   │   │   ├── AdminMiddleware.php
 │   │   │   └── SuperAdminMiddleware.php
 │   │   └── Livewire/
-│   │       ├── MenuGrid.php
+│   │       ├── ProductGrid.php
 │   │       ├── CartComponent.php
 │   │       └── OrderStatus.php
 │   ├── Models/
 │   │   ├── User.php
 │   │   ├── Order.php
 │   │   ├── OrderItem.php
-│   │   ├── MenuItem.php
+│   │   ├── Product.php
 │   │   ├── Session.php
 │   │   └── ChangeLog.php
 │   └── Traits/
@@ -78,7 +78,7 @@ mobile-order-system/
 │   │   ├── create_users_table.php
 │   │   ├── create_orders_table.php
 │   │   ├── create_order_items_table.php
-│   │   ├── create_menu_items_table.php
+│   │   ├── create_products_table.php
 │   │   ├── create_sessions_table.php
 │   │   └── create_change_logs_table.php
 │   └── seeders/
@@ -118,10 +118,10 @@ mobile-order-system/
 - total_amount, created_at
 
 #### order_items（注文明細）
-- id, order_id, menu_item_id
+- id, order_id, product_id
 - quantity, price, options (JSON)
 
-#### menu_items（メニュー）
+#### products（メニュー）
 - id, pos_id, name, price
 - category, image_url
 - is_available (boolean)

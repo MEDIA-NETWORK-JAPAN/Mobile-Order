@@ -747,10 +747,10 @@ public function placeOrder()
 
 ### 4.1 フォーム処理
 ```php
-// app/Livewire/MenuItemForm.php
-class MenuItemForm extends Component
+// app/Livewire/ProductForm.php
+class ProductForm extends Component
 {
-    public MenuItem $item;
+    public Product $item;
     
     public string $name = '';
     public string $description = '';
@@ -766,7 +766,7 @@ class MenuItemForm extends Component
         'is_available' => 'boolean',
     ];
     
-    public function mount(MenuItem $item = null)
+    public function mount(Product $item = null)
     {
         if ($item->exists) {
             $this->item = $item;
@@ -776,7 +776,7 @@ class MenuItemForm extends Component
             $this->category_id = $item->category_id;
             $this->is_available = $item->is_available;
         } else {
-            $this->item = new MenuItem();
+            $this->item = new Product();
         }
     }
     
@@ -916,7 +916,7 @@ class MenuSearch extends Component
     
     public function render()
     {
-        $items = MenuItem::query()
+        $items = Product::query()
             ->with(['category'])
             ->when($this->search, function ($query) {
                 $query->where('name', 'like', "%{$this->search}%")
@@ -925,7 +925,7 @@ class MenuSearch extends Component
             ->when($this->categoryId, function ($query) {
                 $query->where('category_id', $this->categoryId);
             })
-            ->where('is_available', true)
+            ->where('availability_status', 'available')
             ->orderBy($this->sortBy)
             ->paginate(12);
             
@@ -957,10 +957,16 @@ class Cart extends Component
     
     public function addItem($itemId, $quantity = 1)
     {
-        $menuItem = MenuItem::find($itemId);
+        $menuItem = Product::find($itemId);
         
-        if (!$menuItem || !$menuItem->is_available) {
-            $this->error('この商品は現在利用できません');
+        if (!$menuItem || $menuItem->availability_status !== 'available') {
+            $errorMessage = match($menuItem->availability_status) {
+                'sold_out' => 'この商品は売り切れです',
+                'not_arrived' => 'この商品は未入荷です',
+                'preparing' => 'この商品は準備中です',
+                default => 'この商品は現在利用できません'
+            };
+            $this->error($errorMessage);
             return;
         }
         
@@ -1089,18 +1095,18 @@ class Cart extends Component
 
 ### 5.2 コンポーネントの拡張
 ```php
-// app/View/Components/MenuItemCard.php
+// app/View/Components/ProductCard.php
 <?php
 
 namespace App\View\Components;
 
-use App\Models\MenuItem;
+use App\Models\Product;
 use Illuminate\View\Component;
 
-class MenuItemCard extends Component
+class ProductCard extends Component
 {
     public function __construct(
-        public MenuItem $item,
+        public Product $item,
         public bool $showAddButton = true,
         public string $size = 'default'
     ) {}
@@ -1205,13 +1211,13 @@ class MenuItemCard extends Component
 
 ### 6.2 キャッシュ戦略
 ```php
-// app/Livewire/MenuGrid.php
+// app/Livewire/ProductGrid.php
 public function render()
 {
-    $cacheKey = "menu_items_{$this->categoryId}_{$this->search}";
+    $cacheKey = "products_{$this->categoryId}_{$this->search}";
     
     $items = Cache::remember($cacheKey, 300, function () {
-        return MenuItem::query()
+        return Product::query()
             ->with(['category'])
             ->when($this->categoryId, fn($q) => $q->where('category_id', $this->categoryId))
             ->when($this->search, fn($q) => $q->where('name', 'like', "%{$this->search}%"))
@@ -1246,7 +1252,61 @@ public function render()
 />
 ```
 
-### 7.2 意味的なマークアップ
+### 7.2 提供状態表示コンポーネント
+```blade
+{{-- 提供状態バッジコンポーネント --}}
+@props(['status', 'message' => null, 'expectedTime' => null])
+
+@php
+$statusConfig = [
+    'available' => [
+        'color' => 'success',
+        'label' => '販売中',
+        'icon' => 'o-check-circle'
+    ],
+    'sold_out' => [
+        'color' => 'error',
+        'label' => '売り切れ',
+        'icon' => 'o-x-circle'
+    ],
+    'not_arrived' => [
+        'color' => 'warning',
+        'label' => '未入荷',
+        'icon' => 'o-clock'
+    ],
+    'preparing' => [
+        'color' => 'info',
+        'label' => '準備中',
+        'icon' => 'o-cog'
+    ]
+];
+
+$config = $statusConfig[$status] ?? $statusConfig['available'];
+@endphp
+
+<div class="flex items-center gap-2">
+    <x-mary-badge 
+        :value="$config['label']"
+        :type="$config['color']"
+        :icon="$config['icon']"
+    />
+    
+    @if($message)
+        <span class="text-sm text-gray-600">{{ $message }}</span>
+    @elseif($expectedTime && in_array($status, ['not_arrived', 'preparing']))
+        <span class="text-sm text-gray-600">{{ $expectedTime }}頃予定</span>
+    @endif
+</div>
+
+{{-- 使用例 --}}
+<x-availability-status 
+    :status="$item->availability_status"
+    :message="$item->availability_message"
+    :expected-time="$item->expected_available_time"
+/>
+```
+
+### 7.3 意味的なマークアップ
 ```blade
 <main role="main" aria-label="メニュー一覧">
     <section aria-labelledby="menu-heading">

@@ -16,7 +16,6 @@ enum UserRole: string
     case SUPER_ADMIN = 'super_admin';    // システム提供者
     case ADMIN = 'admin';                // 店舗管理者  
     case STAFF = 'staff';                // 店舗スタッフ
-    case CUSTOMER = 'customer';          // お客様
     case POS_SYSTEM = 'pos_system';      // POSシステム
 }
 ```
@@ -166,7 +165,7 @@ class User extends Authenticatable
             'name' => 'Guest_' . $session->id,
             'email' => 'guest_' . $session->id . '@temp.local',
             'password' => Hash::make(Str::random(32)),
-            'role' => 'customer',
+            // ゲストユーザー - usersテーブルに登録せず、セッション方式で管理
             'store_id' => $session->store_id,
             'is_temporary' => true,
         ]);
@@ -266,7 +265,8 @@ class Permission
             'menu.view',         // メニュー閲覧
         ],
         
-        'customer' => [
+        // ゲストユーザーの権限は実装しない - セッション方式で管理
+        'guest' => [
             'menu.view',         // メニュー閲覧
             'orders.create',     // 注文作成
             'orders.own',        // 自分の注文管理
@@ -296,7 +296,8 @@ class AuthServiceProvider extends ServiceProvider
         Gate::define('view-order', function (User $user, Order $order) {
             return $user->role === 'super_admin' ||
                    $user->store_id === $order->store_id ||
-                   ($user->role === 'customer' && $user->id === $order->customer_id);
+                   // ゲストユーザーの場合はguest_tokenで識別
+                   (request()->bearerToken() && $order->guest_token === request()->bearerToken());
         });
         
         Gate::define('pos-api-access', function (User $user, string $endpoint) {

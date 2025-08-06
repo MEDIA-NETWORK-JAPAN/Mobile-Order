@@ -176,7 +176,30 @@ sail() {
 - **データベース設計**: `.claude/01_development_docs/02_database_design.md`
 - **認証・権限**: `.claude/01_development_docs/13_auth_authorization_design.md`
 
+## 作業実施ルール
+
+### 🚨 必須：作業前の許可確認
+**作業を実施する前に必ず許可を取ってから開始してください**
+
+- どんな修正作業でも、実施前に内容を説明し、ユーザーの許可を得る
+- 修正対象ファイル、修正内容、影響範囲を明確に提示する
+- 許可を得てから作業を開始し、完了後に結果を報告する
+
 ## 重要な実装方針
+
+### 提供状態管理の実装変更
+**売り切れと未入荷の区別対応**:
+- `menu_items`テーブルの`is_available`（BOOLEAN）を`availability_status`（ENUM）に変更
+- 4つの状態を管理:
+  - `available`: 販売可能
+  - `sold_out`: 売り切れ  
+  - `not_arrived`: 未入荷
+  - `preparing`: 準備中
+- 追加カラム:
+  - `availability_message`: 提供状態メッセージ（例: "本日入荷予定"）
+  - `expected_available_time`: 提供可能予定時刻
+- UIでは状態に応じたバッジとメッセージを表示
+- POSからAPI経由で状態更新可能（`PUT /api/v1/pos/menu-items/{id}`）
 
 ### デザインシステムの基本方針
 - **モバイルファースト**: スマートフォン用途を最優先（320px〜）

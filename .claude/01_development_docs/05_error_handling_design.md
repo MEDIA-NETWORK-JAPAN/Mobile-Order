@@ -286,12 +286,12 @@ class CartService
 {
     public function addToCart(int $menuItemId, int $quantity): void
     {
-        $menuItem = MenuItem::find($menuItemId);
+        $menuItem = Product::find($menuItemId);
         
         // 在庫チェック
         if (!$menuItem->is_available) {
             throw new BusinessException('BIZ-STK-001', [
-                'menu_item_id' => $menuItemId,
+                'product_id' => $menuItemId,
                 'menu_item_name' => $menuItem->name,
             ]);
         }
@@ -305,7 +305,7 @@ class CartService
         $itemsToRemove = [];
         
         foreach ($this->getCartItems() as $index => $item) {
-            $menuItem = MenuItem::find($item['menu_item_id']);
+            $menuItem = Product::find($item['product_id']);
             
             if (!$menuItem || !$menuItem->is_available) {
                 $itemsToRemove[] = $index;
@@ -572,10 +572,10 @@ class ErrorHandlingTest extends TestCase
     /** @test */
     public function it_shows_user_friendly_error_for_out_of_stock()
     {
-        $menuItem = MenuItem::factory()->create(['is_available' => false]);
+        $menuItem = Product::factory()->create(['is_available' => false]);
         
         $response = $this->postJson('/api/v1/cart/add', [
-            'menu_item_id' => $menuItem->id,
+            'product_id' => $menuItem->id,
             'quantity' => 1,
         ]);
         
@@ -592,10 +592,10 @@ class ErrorHandlingTest extends TestCase
     /** @test */
     public function it_returns_error_in_requested_language()
     {
-        $menuItem = MenuItem::factory()->create(['is_available' => false]);
+        $menuItem = Product::factory()->create(['is_available' => false]);
         
         $response = $this->postJson('/api/v1/cart/add', 
-            ['menu_item_id' => $menuItem->id, 'quantity' => 1],
+            ['product_id' => $menuItem->id, 'quantity' => 1],
             ['Accept-Language' => 'en']
         );
         

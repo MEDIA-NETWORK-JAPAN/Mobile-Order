@@ -35,7 +35,7 @@
 │   └── SearchBox
 ├── Organisms（有機体）
 │   ├── Header
-│   ├── MenuGrid
+│   ├── ProductGrid
 │   ├── CartDrawer
 │   ├── OrderSummary
 │   └── Navigation
@@ -212,15 +212,15 @@
 }
 ```
 
-### 4.2 MenuItemCard コンポーネント
+### 4.2 ProductCard コンポーネント
 
 #### 専用コンポーネント
 ```php
-// app/View/Components/MenuItemCard.php
-class MenuItemCard extends Component
+// app/View/Components/ProductCard.php
+class ProductCard extends Component
 {
     public function __construct(
-        public MenuItem $item,
+        public Product $item,
         public bool $showAddButton = true
     ) {}
     
@@ -334,12 +334,12 @@ class MenuItemCard extends Component
 
 ## 5. Organisms（複合体コンポーネント）
 
-### 5.1 MenuGrid Livewireコンポーネント
+### 5.1 ProductGrid Livewireコンポーネント
 
 #### Livewireコンポーネント
 ```php
-// app/Livewire/Customer/MenuGrid.php
-class MenuGrid extends Component
+// app/Livewire/Customer/ProductGrid.php
+class ProductGrid extends Component
 {
     public $categoryId = null;
     public $searchTerm = '';
@@ -359,7 +359,7 @@ class MenuGrid extends Component
     public function addToCart($menuItemId)
     {
         try {
-            $menuItem = MenuItem::findOrFail($menuItemId);
+            $menuItem = Product::findOrFail($menuItemId);
             
             if (!$menuItem->is_available) {
                 throw new BusinessException('BIZ-STK-001');
@@ -376,7 +376,7 @@ class MenuGrid extends Component
     
     public function render()
     {
-        $items = MenuItem::query()
+        $items = Product::query()
             ->with(['category'])
             ->when($this->categoryId, fn($q) => $q->where('category_id', $this->categoryId))
             ->when($this->searchTerm, fn($q) => $q->where('name', 'like', "%{$this->searchTerm}%"))
@@ -745,7 +745,7 @@ public function render()
     $cacheKey = "menu-items-{$this->categoryId}";
     
     $items = Cache::remember($cacheKey, 300, function () {
-        return MenuItem::with(['category'])
+        return Product::with(['category'])
             ->when($this->categoryId, fn($q) => $q->where('category_id', $this->categoryId))
             ->get();
     });

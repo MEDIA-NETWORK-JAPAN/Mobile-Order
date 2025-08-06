@@ -85,11 +85,11 @@
 
 ### 3.2 単体テスト実装例
 ```php
-// tests/Unit/Models/MenuItemTest.php
-use App\Models\MenuItem;
+// tests/Unit/Models/ProductTest.php
+use App\Models\Product;
 use App\Models\MenuCategory;
 
-class MenuItemTest extends TestCase
+class ProductTest extends TestCase
 {
     use RefreshDatabase;
     
@@ -97,7 +97,7 @@ class MenuItemTest extends TestCase
     public function it_belongs_to_a_category()
     {
         $category = MenuCategory::factory()->create();
-        $menuItem = MenuItem::factory()->create(['category_id' => $category->id]);
+        $menuItem = Product::factory()->create(['category_id' => $category->id]);
         
         $this->assertInstanceOf(MenuCategory::class, $menuItem->category);
         $this->assertEquals($category->id, $menuItem->category->id);
@@ -106,7 +106,7 @@ class MenuItemTest extends TestCase
     /** @test */
     public function it_calculates_total_price_with_options()
     {
-        $menuItem = MenuItem::factory()->create(['price' => 1000]);
+        $menuItem = Product::factory()->create(['price' => 1000]);
         $options = [
             ['price_modifier' => 200],
             ['price_modifier' => 100],
@@ -120,7 +120,7 @@ class MenuItemTest extends TestCase
     /** @test */
     public function it_returns_localized_name()
     {
-        $menuItem = MenuItem::factory()->create([
+        $menuItem = Product::factory()->create([
             'name' => 'ハンバーガー',
             'translations' => [
                 'en' => 'Hamburger',
@@ -139,7 +139,7 @@ class MenuItemTest extends TestCase
 ```php
 // tests/Unit/Services/CartServiceTest.php
 use App\Services\CartService;
-use App\Models\MenuItem;
+use App\Models\Product;
 use App\Exceptions\BusinessException;
 
 class CartServiceTest extends TestCase
@@ -157,20 +157,20 @@ class CartServiceTest extends TestCase
     /** @test */
     public function it_adds_item_to_cart()
     {
-        $menuItem = MenuItem::factory()->create(['is_available' => true]);
+        $menuItem = Product::factory()->create(['is_available' => true]);
         
         $this->cartService->addToCart($menuItem->id, 2);
         
         $cartItems = $this->cartService->getCartItems();
         $this->assertCount(1, $cartItems);
-        $this->assertEquals($menuItem->id, $cartItems[0]['menu_item_id']);
+        $this->assertEquals($menuItem->id, $cartItems[0]['product_id']);
         $this->assertEquals(2, $cartItems[0]['quantity']);
     }
     
     /** @test */
     public function it_throws_exception_when_adding_unavailable_item()
     {
-        $menuItem = MenuItem::factory()->create(['is_available' => false]);
+        $menuItem = Product::factory()->create(['is_available' => false]);
         
         $this->expectException(BusinessException::class);
         $this->expectExceptionMessage('BIZ-STK-001');
@@ -181,8 +181,8 @@ class CartServiceTest extends TestCase
     /** @test */
     public function it_validates_cart_and_removes_unavailable_items()
     {
-        $availableItem = MenuItem::factory()->create(['is_available' => true]);
-        $unavailableItem = MenuItem::factory()->create(['is_available' => false]);
+        $availableItem = Product::factory()->create(['is_available' => true]);
+        $unavailableItem = Product::factory()->create(['is_available' => false]);
         
         // カートに両方の商品を追加（強制的に）
         $this->cartService->forceAddToCart($availableItem->id, 1);
@@ -196,7 +196,7 @@ class CartServiceTest extends TestCase
         // 利用可能な商品のみがカートに残っている
         $cartItems = $this->cartService->getCartItems();
         $this->assertCount(1, $cartItems);
-        $this->assertEquals($availableItem->id, $cartItems[0]['menu_item_id']);
+        $this->assertEquals($availableItem->id, $cartItems[0]['product_id']);
     }
 }
 ```
@@ -217,10 +217,10 @@ class MenuApiTest extends TestCase
     use RefreshDatabase;
     
     /** @test */
-    public function it_returns_menu_items_list()
+    public function it_returns_products_list()
     {
         $category = MenuCategory::factory()->create();
-        $menuItems = MenuItem::factory()->count(3)->create([
+        $menuItems = Product::factory()->count(3)->create([
             'category_id' => $category->id,
             'is_active' => true,
         ]);
@@ -244,13 +244,13 @@ class MenuApiTest extends TestCase
     }
     
     /** @test */
-    public function it_filters_menu_items_by_category()
+    public function it_filters_products_by_category()
     {
         $category1 = MenuCategory::factory()->create();
         $category2 = MenuCategory::factory()->create();
         
-        MenuItem::factory()->count(2)->create(['category_id' => $category1->id]);
-        MenuItem::factory()->count(3)->create(['category_id' => $category2->id]);
+        Product::factory()->count(2)->create(['category_id' => $category1->id]);
+        Product::factory()->count(3)->create(['category_id' => $category2->id]);
         
         $response = $this->getJson("/api/v1/menu-items?category_id={$category1->id}");
         
@@ -316,16 +316,16 @@ class SessionAuthTest extends TestCase
     /** @test */
     public function authenticated_user_can_create_order()
     {
-        $user = User::factory()->customer()->create();
+        $user = User::factory()->Product::factory()->create();
         $session = Session::factory()->active()->create();
-        $menuItem = MenuItem::factory()->create();
+        $menuItem = Product::factory()->create();
         
         $response = $this->actingAs($user, 'sanctum')
             ->postJson('/api/v1/orders', [
                 'session_id' => $session->id,
                 'items' => [
                     [
-                        'menu_item_id' => $menuItem->id,
+                        'product_id' => $menuItem->id,
                         'quantity' => 2,
                         'options' => [],
                     ]
@@ -337,7 +337,7 @@ class SessionAuthTest extends TestCase
         
         $this->assertDatabaseHas('orders', [
             'session_id' => $session->id,
-            'customer_id' => $user->id,
+            'guest_token' => $user->id,
             'status' => 'pending',
         ]);
     }
@@ -494,7 +494,7 @@ class CustomerOrderFlowTest extends DuskTestCase
         $store = Store::factory()->create();
         $session = Session::factory()->active()->create(['store_id' => $store->id]);
         $category = MenuCategory::factory()->create(['store_id' => $store->id]);
-        $menuItem = MenuItem::factory()->create([
+        $menuItem = Product::factory()->create([
             'category_id' => $category->id,
             'name' => 'ハンバーガーセット',
             'price' => 1200,
@@ -541,7 +541,7 @@ class CustomerOrderFlowTest extends DuskTestCase
     public function customer_sees_error_when_item_becomes_unavailable()
     {
         $session = Session::factory()->active()->create();
-        $menuItem = MenuItem::factory()->create(['is_available' => true]);
+        $menuItem = Product::factory()->create(['is_available' => true]);
         
         $this->browse(function (Browser $browser) use ($session, $menuItem) {
             $browser->visit("/qr/{$session->qr_code}")
@@ -566,8 +566,8 @@ class CustomerOrderFlowTest extends DuskTestCase
 
 ### 7.1 Factoryの活用
 ```php
-// database/factories/MenuItemFactory.php
-class MenuItemFactory extends Factory
+// database/factories/ProductFactory.php
+class ProductFactory extends Factory
 {
     public function definition(): array
     {
@@ -596,12 +596,12 @@ class MenuItemFactory extends Factory
     
     public function withOptions(): static
     {
-        return $this->afterCreating(function (MenuItem $menuItem) {
-            $option = MenuItemOption::factory()->create([
-                'menu_item_id' => $menuItem->id
+        return $this->afterCreating(function (Product $menuItem) {
+            $option = ProductOption::factory()->create([
+                'product_id' => $menuItem->id
             ]);
             
-            MenuItemOptionValue::factory()->count(3)->create([
+            ProductOptionValue::factory()->count(3)->create([
                 'option_id' => $option->id
             ]);
         });
@@ -629,7 +629,7 @@ class TestDataSeeder extends Seeder
         
         // 各カテゴリにメニューアイテムを作成
         foreach ($categories as $category) {
-            MenuItem::factory()->count(5)->create([
+            Product::factory()->count(5)->create([
                 'store_id' => $store->id,
                 'category_id' => $category->id,
             ]);
@@ -677,7 +677,7 @@ class ApiPerformanceTest extends TestCase
     /** @test */
     public function menu_api_responds_within_acceptable_time()
     {
-        MenuItem::factory()->count(100)->create();
+        Product::factory()->count(100)->create();
         
         $startTime = microtime(true);
         
@@ -693,8 +693,8 @@ class ApiPerformanceTest extends TestCase
     public function order_creation_handles_concurrent_requests()
     {
         $session = Session::factory()->active()->create();
-        $menuItem = MenuItem::factory()->create();
-        $user = User::factory()->customer()->create();
+        $menuItem = Product::factory()->create();
+        $user = User::factory()->Product::factory()->create();
         
         $promises = [];
         
@@ -704,7 +704,7 @@ class ApiPerformanceTest extends TestCase
                 ->postJson('/api/v1/orders', [
                     'session_id' => $session->id,
                     'items' => [[
-                        'menu_item_id' => $menuItem->id,
+                        'product_id' => $menuItem->id,
                         'quantity' => 1,
                     ]]
                 ]);
@@ -798,7 +798,7 @@ php artisan test --testsuite=Unit
 php artisan test --testsuite=Feature
 
 # 特定のテストクラス実行
-php artisan test tests/Unit/Models/MenuItemTest.php
+php artisan test tests/Unit/Models/ProductTest.php
 
 # 特定のテストメソッド実行
 php artisan test --filter it_calculates_total_price_with_options

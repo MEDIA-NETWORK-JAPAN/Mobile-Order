@@ -107,7 +107,7 @@ return [
 // app/Livewire/Customer/MenuCard.php
 class MenuCard extends Component
 {
-    public MenuItem $item;
+    public Product $item;
     
     public function render()
     {

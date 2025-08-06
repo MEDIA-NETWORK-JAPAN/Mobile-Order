@@ -279,7 +279,7 @@ sail artisan migrate:rollback
 sail artisan migrate:fresh --seed
 
 # マイグレーション作成
-sail artisan make:migration create_menu_items_table
+sail artisan make:migration create_products_table
 ```
 
 #### シーダー管理
@@ -288,10 +288,10 @@ sail artisan make:migration create_menu_items_table
 sail artisan db:seed
 
 # 特定のシーダー実行
-sail artisan db:seed --class=MenuItemSeeder
+sail artisan db:seed --class=ProductSeeder
 
 # シーダー作成
-sail artisan make:seeder MenuItemSeeder
+sail artisan make:seeder ProductSeeder
 ```
 
 #### データベースバックアップ
@@ -437,8 +437,8 @@ sail artisan optimize:clear
 ],
 
 // Redisを使ったキャッシュ例
-Cache::remember('menu_items', 3600, function () {
-    return MenuItem::with('category')->get();
+Cache::remember('products', 3600, function () {
+    return Product::with('category')->get();
 });
 ```
 

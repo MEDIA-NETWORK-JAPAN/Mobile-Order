@@ -42,20 +42,20 @@
 // routes/api.php
 Route::prefix('v1')->group(function () {
     // メニューアイテム
-    Route::get('menu-items', [MenuItemController::class, 'index']);         // 一覧取得
-    Route::post('menu-items', [MenuItemController::class, 'store']);        // 作成
-    Route::get('menu-items/{id}', [MenuItemController::class, 'show']);     // 詳細取得
-    Route::put('menu-items/{id}', [MenuItemController::class, 'update']);   // 更新
-    Route::patch('menu-items/{id}', [MenuItemController::class, 'update']); // 部分更新
-    Route::delete('menu-items/{id}', [MenuItemController::class, 'destroy']); // 削除
+    Route::get('menu-items', [ProductController::class, 'index']);         // 一覧取得
+    Route::post('menu-items', [ProductController::class, 'store']);        // 作成
+    Route::get('menu-items/{id}', [ProductController::class, 'show']);     // 詳細取得
+    Route::put('menu-items/{id}', [ProductController::class, 'update']);   // 更新
+    Route::patch('menu-items/{id}', [ProductController::class, 'update']); // 部分更新
+    Route::delete('menu-items/{id}', [ProductController::class, 'destroy']); // 削除
     
     // ネストしたリソース
     Route::get('menu-items/{id}/reviews', [ReviewController::class, 'index']);
     Route::post('menu-items/{id}/reviews', [ReviewController::class, 'store']);
     
     // カスタムアクション
-    Route::post('menu-items/{id}/toggle-availability', [MenuItemController::class, 'toggleAvailability']);
-    Route::get('menu-items/popular', [MenuItemController::class, 'popular']);
+    Route::post('menu-items/{id}/toggle-availability', [ProductController::class, 'toggleAvailability']);
+    Route::get('menu-items/popular', [ProductController::class, 'popular']);
 });
 ```
 
@@ -120,7 +120,7 @@ class ApiResponse
 
 #### APIリソースクラス
 ```php
-// app/Http/Resources/MenuItemResource.php
+// app/Http/Resources/ProductResource.php
 <?php
 
 namespace App\Http\Resources;
@@ -128,7 +128,7 @@ namespace App\Http\Resources;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-class MenuItemResource extends JsonResource
+class ProductResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
@@ -147,8 +147,8 @@ class MenuItemResource extends JsonResource
     }
 }
 
-// app/Http/Resources/MenuItemCollection.php
-class MenuItemCollection extends ResourceCollection
+// app/Http/Resources/ProductCollection.php
+class ProductCollection extends ResourceCollection
 {
     public function toArray(Request $request): array
     {
@@ -446,8 +446,8 @@ class CheckApiAbility
 Route::middleware(['auth:sanctum'])->prefix('v1')->group(function () {
     // 基本的な読み込み権限
     Route::middleware(['ability:menu:read'])->group(function () {
-        Route::get('menu-items', [MenuItemController::class, 'index']);
-        Route::get('menu-items/{id}', [MenuItemController::class, 'show']);
+        Route::get('menu-items', [ProductController::class, 'index']);
+        Route::get('menu-items/{id}', [ProductController::class, 'show']);
         Route::get('categories', [CategoryController::class, 'index']);
     });
     
@@ -464,7 +464,7 @@ Route::middleware(['auth:sanctum'])->prefix('v1')->group(function () {
     
     // 管理者権限
     Route::middleware(['ability:admin:*'])->prefix('admin')->group(function () {
-        Route::apiResource('menu-items', AdminMenuItemController::class);
+        Route::apiResource('menu-items', AdminProductController::class);
         Route::apiResource('categories', AdminCategoryController::class);
         Route::get('dashboard', [AdminDashboardController::class, 'index']);
     });
@@ -477,24 +477,24 @@ Route::middleware(['auth:sanctum'])->prefix('v1')->group(function () {
 
 #### Spatie Query Builder活用
 ```php
-// app/Http/Controllers/Api/MenuItemController.php
+// app/Http/Controllers/Api/ProductController.php
 <?php
 
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Http\Resources\MenuItemCollection;
+use App\Http\Resources\ProductCollection;
 use App\Http\Responses\ApiResponse;
-use App\Models\MenuItem;
+use App\Models\Product;
 use Spatie\QueryBuilder\QueryBuilder;
 use Spatie\QueryBuilder\AllowedFilter;
 use Spatie\QueryBuilder\AllowedSort;
 
-class MenuItemController extends Controller
+class ProductController extends Controller
 {
     public function index()
     {
-        $menuItems = QueryBuilder::for(MenuItem::class)
+        $menuItems = QueryBuilder::for(Product::class)
             ->allowedFilters([
                 AllowedFilter::exact('category_id'),
                 AllowedFilter::exact('is_available'),
@@ -514,19 +514,19 @@ class MenuItemController extends Controller
             ->paginate(request('per_page', 20));
         
         return ApiResponse::paginated(
-            new MenuItemCollection($menuItems),
+            new ProductCollection($menuItems),
             'メニューアイテムを取得しました'
         );
     }
     
-    public function show(MenuItem $menuItem)
+    public function show(Product $menuItem)
     {
-        $menuItem = QueryBuilder::for(MenuItem::where('id', $menuItem->id))
+        $menuItem = QueryBuilder::for(Product::where('id', $menuItem->id))
             ->allowedIncludes(['category', 'reviews.user', 'nutrition_info'])
             ->firstOrFail();
         
         return ApiResponse::success(
-            new MenuItemResource($menuItem),
+            new ProductResource($menuItem),
             'メニューアイテムの詳細を取得しました'
         );
     }
@@ -535,8 +535,8 @@ class MenuItemController extends Controller
 
 #### カスタムスコープ
 ```php
-// app/Models/MenuItem.php
-class MenuItem extends Model
+// app/Models/Product.php
+class Product extends Model
 {
     public function scopePriceRange($query, $min = null, $max = null)
     {
@@ -580,7 +580,7 @@ use App\Http\Requests\CreateOrderRequest;
 use App\Http\Resources\OrderResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\Order;
-use App\Models\MenuItem;
+use App\Models\Product;
 use App\Services\OrderService;
 use Illuminate\Support\Facades\DB;
 
@@ -596,7 +596,7 @@ class OrderController extends Controller
             DB::beginTransaction();
             
             // 在庫確認
-            $items = MenuItem::whereIn('id', collect($request->items)->pluck('id'))
+            $items = Product::whereIn('id', collect($request->items)->pluck('id'))
                 ->available()
                 ->get();
             
@@ -667,7 +667,7 @@ class OrderService
     {
         // 合計金額計算
         $total = collect($items)->sum(function ($item) {
-            $menuItem = MenuItem::find($item['id']);
+            $menuItem = Product::find($item['id']);
             return $menuItem->price * $item['quantity'];
         });
         
@@ -683,11 +683,11 @@ class OrderService
         
         // 注文アイテム作成
         foreach ($items as $item) {
-            $menuItem = MenuItem::find($item['id']);
+            $menuItem = Product::find($item['id']);
             
             OrderItem::create([
                 'order_id' => $order->id,
-                'menu_item_id' => $menuItem->id,
+                'product_id' => $menuItem->id,
                 'quantity' => $item['quantity'],
                 'price' => $menuItem->price,
                 'subtotal' => $menuItem->price * $item['quantity'],
@@ -718,13 +718,13 @@ class OrderService
 
 #### HTTP キャッシュヘッダー
 ```php
-// app/Http/Controllers/Api/MenuItemController.php
+// app/Http/Controllers/Api/ProductController.php
 public function index()
 {
-    $cacheKey = 'menu_items_' . md5(request()->getQueryString());
+    $cacheKey = 'products_' . md5(request()->getQueryString());
     
     $menuItems = Cache::remember($cacheKey, 300, function () {
-        return QueryBuilder::for(MenuItem::class)
+        return QueryBuilder::for(Product::class)
             ->allowedFilters([...])
             ->allowedSorts([...])
             ->with(['category'])
@@ -733,13 +733,13 @@ public function index()
     });
     
     return ApiResponse::paginated(
-        new MenuItemCollection($menuItems),
+        new ProductCollection($menuItems),
         'メニューアイテムを取得しました'
     )->header('Cache-Control', 'public, max-age=300')
      ->header('ETag', md5($menuItems->toJson()));
 }
 
-public function show(MenuItem $menuItem)
+public function show(Product $menuItem)
 {
     $etag = md5($menuItem->updated_at . $menuItem->id);
     
@@ -748,7 +748,7 @@ public function show(MenuItem $menuItem)
     }
     
     return ApiResponse::success(
-        new MenuItemResource($menuItem->load(['category', 'nutrition_info'])),
+        new ProductResource($menuItem->load(['category', 'nutrition_info'])),
         'メニューアイテムの詳細を取得しました'
     )->header('ETag', $etag)
      ->header('Cache-Control', 'public, max-age=600');
@@ -785,10 +785,10 @@ public function index()
 
 #### インデックス最適化
 ```php
-// database/migrations/add_indexes_to_menu_items_table.php
+// database/migrations/add_indexes_to_products_table.php
 public function up()
 {
-    Schema::table('menu_items', function (Blueprint $table) {
+    Schema::table('products', function (Blueprint $table) {
         $table->index(['is_available', 'is_active']); // 複合インデックス
         $table->index(['category_id', 'created_at']); // フィルタリング用
         $table->index('price'); // ソート用
@@ -820,7 +820,7 @@ protected $routeMiddleware = [
 // routes/api.php
 Route::middleware(['throttle:60,1'])->prefix('v1')->group(function () {
     // 一般API（1分間に60リクエスト）
-    Route::get('menu-items', [MenuItemController::class, 'index']);
+    Route::get('menu-items', [ProductController::class, 'index']);
 });
 
 Route::middleware(['throttle:10,1'])->prefix('v1')->group(function () {
@@ -858,7 +858,7 @@ class CreateOrderRequest extends FormRequest
     {
         return [
             'items' => 'required|array|min:1|max:20',
-            'items.*.id' => 'required|integer|exists:menu_items,id',
+            'items.*.id' => 'required|integer|exists:products,id',
             'items.*.quantity' => 'required|integer|min:1|max:10',
             'payment_method' => ['required', Rule::in(['cash', 'card', 'qr_code'])],
             'notes' => 'nullable|string|max:500',
@@ -894,7 +894,7 @@ class CreateOrderRequest extends FormRequest
 public function search(Request $request)
 {
     $query = $request->input('query');
-    $results = DB::select("SELECT * FROM menu_items WHERE name LIKE '%{$query}%'");
+    $results = DB::select("SELECT * FROM products WHERE name LIKE '%{$query}%'");
     return $results;
 }
 
@@ -902,7 +902,7 @@ public function search(Request $request)
 public function search(Request $request)
 {
     $query = $request->input('query');
-    $results = MenuItem::where('name', 'LIKE', "%{$query}%")
+    $results = Product::where('name', 'LIKE', "%{$query}%")
         ->orWhere('description', 'LIKE', "%{$query}%")
         ->get();
     return $results;
@@ -1098,7 +1098,7 @@ components:
       bearerFormat: JWT
 
   schemas:
-    MenuItem:
+    Product:
       type: object
       properties:
         id:
@@ -1167,7 +1167,7 @@ paths:
                       data:
                         type: array
                         items:
-                          $ref: '#/components/schemas/MenuItem'
+                          $ref: '#/components/schemas/Product'
 ```
 
 ### 8.2 自動テスト統合
@@ -1180,17 +1180,17 @@ paths:
 namespace Tests\Feature\Api;
 
 use Tests\TestCase;
-use App\Models\MenuItem;
+use App\Models\Product;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 class ApiDocumentationTest extends TestCase
 {
     use RefreshDatabase;
     
-    public function test_menu_items_endpoint_matches_documentation()
+    public function test_products_endpoint_matches_documentation()
     {
         // Arrange
-        MenuItem::factory()->count(3)->create();
+        Product::factory()->count(3)->create();
         
         // Act
         $response = $this->getJson('/api/v1/menu-items');
@@ -1238,7 +1238,7 @@ namespace Tests\Feature\Api;
 
 use Tests\TestCase;
 use App\Models\User;
-use App\Models\MenuItem;
+use App\Models\Product;
 use Laravel\Sanctum\Sanctum;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -1250,7 +1250,7 @@ class OrderApiTest extends TestCase
     {
         // Arrange
         $user = User::factory()->create();
-        $items = MenuItem::factory()->count(2)->create(['is_available' => true]);
+        $items = Product::factory()->count(2)->create(['is_available' => true]);
         
         Sanctum::actingAs($user, ['order:create']);
         

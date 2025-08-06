@@ -13,7 +13,8 @@
 - **非推奨通知**: レスポンスヘッダーで通知
 
 ### 1.3 認証方式
-- **モバイルAPI**: Bearer Token（Laravel Sanctum）
+- **席セッション**: QRコード読み取り後のトークン認証
+- **ゲストセッション**: 自動生成トークン + デバイスフィンガープリント
 - **POS API**: Bearer Token + IP制限（Laravel Sanctum）
 - **管理画面**: Session認証（Laravel Breeze）
 
@@ -22,13 +23,13 @@
 ### 2.1 エンドポイント命名
 ```
 # リソースの集合
-GET    /api/v1/menu-items         # 一覧取得
-POST   /api/v1/menu-items         # 新規作成
+GET    /api/v1/products           # 一覧取得
+POST   /api/v1/products           # 新規作成
 
 # 単一リソース
-GET    /api/v1/menu-items/{id}   # 詳細取得
-PUT    /api/v1/menu-items/{id}   # 更新
-DELETE /api/v1/menu-items/{id}   # 削除
+GET    /api/v1/products/{id}     # 詳細取得
+PUT    /api/v1/products/{id}     # 更新
+DELETE /api/v1/products/{id}     # 削除
 
 # リソースのアクション
 POST   /api/v1/orders/{id}/confirm     # 注文確認
@@ -36,7 +37,7 @@ POST   /api/v1/sessions/start          # セッション開始
 ```
 
 ### 2.2 命名ルール
-- **小文字とハイフン**: `menu-items`（ケバブケース）
+- **小文字とハイフン**: `products`、`categories`（ケバブケース）
 - **複数形**: コレクションリソースは複数形
 - **動詞は使わない**: RESTfulの原則に従う（例外：特殊アクション）
 
@@ -58,7 +59,7 @@ X-Request-ID: {uuid}
   "session_id": "123e4567-e89b-12d3-a456-426614174000",
   "items": [
     {
-      "menu_item_id": 1,
+      "product_id": 1,
       "quantity": 2,
       "options": [
         {
@@ -75,16 +76,22 @@ X-Request-ID: {uuid}
 ### 3.3 クエリパラメータ
 ```
 # ページネーション
-GET /api/v1/menu-items?page=1&per_page=20
+GET /api/v1/products?page=1&per_page=20
 
 # フィルタリング
-GET /api/v1/menu-items?category_id=1&is_available=true
+GET /api/v1/products?category_id=1&availability_status=available
+
+# 複数ステータス指定
+GET /api/v1/products?availability_status[]=available&availability_status[]=preparing
+
+# カテゴリーに紐付けられた商品のみ取得
+GET /api/v1/categories/{id}/products
 
 # ソート
-GET /api/v1/menu-items?sort=price&order=asc
+GET /api/v1/products?sort=price&order=asc
 
 # 検索
-GET /api/v1/menu-items?q=ラーメン
+GET /api/v1/products?q=ラーメン
 ```
 
 ## 4. レスポンス形式
@@ -159,7 +166,7 @@ GET /api/v1/menu-items?q=ラーメン
       "items.0.quantity": [
         "数量は1以上を指定してください"
       ],
-      "items.1.menu_item_id": [
+      "items.1.product_id": [
         "指定されたメニューは存在しません"
       ]
     }
@@ -238,16 +245,24 @@ GET /api/v1/menu-items?q=ラーメン
 
 ### 6.1 認証API
 ```
-POST   /api/v1/auth/session          # QRコードセッション開始
-POST   /api/v1/auth/refresh          # トークンリフレッシュ
-POST   /api/v1/auth/logout           # ログアウト
+# 席セッション（QRコード読み取り）
+POST   /api/v1/auth/session/start    # QRコードセッション開始
+POST   /api/v1/auth/session/refresh  # セッショントークンリフレッシュ
+POST   /api/v1/auth/session/end      # セッション終了
+
+# ゲストセッション（自動）
+POST   /api/v1/auth/guest/start      # ゲストセッション開始
+POST   /api/v1/auth/guest/refresh    # ゲストトークンリフレッシュ
+DELETE /api/v1/auth/guest/end        # ゲストセッション終了
 ```
 
 ### 6.2 メニューAPI
 ```
-GET    /api/v1/menu-categories       # カテゴリ一覧
-GET    /api/v1/menu-items            # メニュー一覧
-GET    /api/v1/menu-items/{id}      # メニュー詳細
+GET    /api/v1/categories            # カテゴリ一覧
+GET    /api/v1/products              # 商品一覧
+GET    /api/v1/products/{id}         # 商品詳細
+GET    /api/v1/products/{id}/options # 商品のオプション一覧
+GET    /api/v1/categories/{id}/products # カテゴリ別商品一覧
 ```
 
 ### 6.3 注文API
@@ -265,16 +280,29 @@ GET    /api/v1/pos/changes/detail   # 変更詳細取得
 POST   /api/v1/pos/changes/sync     # 同期完了通知
 GET    /api/v1/pos/orders            # 注文一覧取得
 PUT    /api/v1/pos/orders/{id}      # 注文ステータス更新
-PUT    /api/v1/pos/menu-items/{id}  # メニュー在庫更新
+PUT    /api/v1/pos/products/{id}    # 商品提供状態更新
 ```
 
 ### 6.5 管理API
 ```
 # メニュー管理
-GET    /api/v1/admin/menu-items     # メニュー一覧（管理用）
-POST   /api/v1/admin/menu-items     # メニュー作成
-PUT    /api/v1/admin/menu-items/{id} # メニュー更新
-DELETE /api/v1/admin/menu-items/{id} # メニュー削除
+# 商品管理
+GET    /api/v1/admin/products       # 商品一覧（管理用）
+POST   /api/v1/admin/products       # 商品作成
+PUT    /api/v1/admin/products/{id}  # 商品更新
+DELETE /api/v1/admin/products/{id}  # 商品削除
+
+# カテゴリ管理
+GET    /api/v1/admin/categories     # カテゴリ一覧
+POST   /api/v1/admin/categories     # カテゴリ作成
+PUT    /api/v1/admin/categories/{id} # カテゴリ更新
+DELETE /api/v1/admin/categories/{id} # カテゴリ削除
+
+# オプション管理
+GET    /api/v1/admin/options        # オプション一覧
+POST   /api/v1/admin/options        # オプション作成
+PUT    /api/v1/admin/options/{id}   # オプション更新
+DELETE /api/v1/admin/options/{id}   # オプション削除
 
 # セッション管理
 GET    /api/v1/admin/sessions       # セッション一覧
@@ -336,11 +364,11 @@ Strict-Transport-Security: max-age=31536000; includeSubDomains
 
 ### 9.1 コントローラー実装
 ```php
-class MenuItemController extends Controller
+class ProductController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = MenuItem::with(['category', 'options'])
+        $query = Product::with(['categories', 'options'])
             ->where('is_active', true);
             
         // フィルタリング
@@ -352,7 +380,7 @@ class MenuItemController extends Controller
         $items = $query->paginate($request->get('per_page', 20));
         
         return $this->successResponse(
-            data: MenuItemResource::collection($items),
+            data: ProductResource::collection($items),
             meta: $this->paginationMeta($items)
         );
     }
@@ -369,7 +397,135 @@ class MenuItemController extends Controller
 }
 ```
 
-### 9.2 エラーハンドリング
+### 9.2 POS API: 商品提供状態更新
+```php
+// PUT /api/v1/pos/products/{id}
+public function updateProductAvailability(Request $request, $id)
+{
+    $validated = $request->validate([
+        'availability_status' => 'required|in:available,sold_out,not_arrived,preparing',
+        'availability_message' => 'nullable|string|max:255',
+        'expected_available_time' => 'nullable|date_format:H:i',
+    ]);
+    
+    $product = Product::findOrFail($id);
+    $product->update($validated);
+    
+    // 変更履歴を記録
+    ChangeLog::create([
+        'entity_type' => 'products',
+        'entity_id' => $product->id,
+        'action' => 'updated',
+        'changes' => json_encode([
+            'availability_status' => [
+                'old' => $product->getOriginal('availability_status'),
+                'new' => $validated['availability_status']
+            ]
+        ]),
+        'user_id' => auth()->id(),
+        'user_type' => 'pos_system',
+    ]);
+    
+    return response()->json([
+        'success' => true,
+        'data' => [
+            'id' => $product->id,
+            'availability_status' => $product->availability_status,
+            'availability_message' => $product->availability_message,
+            'expected_available_time' => $product->expected_available_time,
+        ]
+    ]);
+}
+```
+
+### 9.3 商品詳細API（オプション付き）
+```php
+// GET /api/v1/products/{id}
+public function show($id)
+{
+    $product = Product::with([
+        'categories',
+        'images' => function($query) {
+            $query->orderBy('sort_order');
+        },
+        'options' => function($query) {
+            $query->with(['optionProducts' => function($query) {
+                $query->orderBy('sort_no');
+            }]);
+        }
+    ])->findOrFail($id);
+    
+    return response()->json([
+        'success' => true,
+        'data' => [
+            'id' => $product->id,
+            'code' => $product->code,
+            'name' => $product->name,
+            'description' => $product->description,
+            'price' => $product->price,
+            'tax_in_price' => $product->tax_in_price,
+            'tax_type' => $product->tax_type,
+            'availability_status' => $product->availability_status,
+            'availability_message' => $product->availability_message,
+            'expected_available_time' => $product->expected_available_time,
+            'image_url' => $product->image_url,
+            'images' => $product->images,
+            'categories' => $product->categories,
+            'options' => $product->options->map(function($option) {
+                return [
+                    'id' => $option->id,
+                    'title' => $option->title,
+                    'description' => $option->description,
+                    'required' => $option->required,
+                    'selection_type' => $option->selection_type,
+                    'choices' => $option->optionProducts->map(function($choice) {
+                        return [
+                            'id' => $choice->id,
+                            'name' => $choice->name,
+                            'price' => $choice->price,
+                            'tax_in_price' => $choice->tax_in_price,
+                            'availability_status' => $choice->availability_status,
+                            'default' => $choice->pivot->default,
+                        ];
+                    })
+                ];
+            })
+        ]
+    ]);
+}
+```
+
+### 9.4 カテゴリ別商品一覧API
+```php
+// GET /api/v1/categories/{id}/products
+public function getCategoryProducts($categoryId, Request $request)
+{
+    $products = Product::whereHas('categories', function($query) use ($categoryId) {
+        $query->where('categories.id', $categoryId);
+    })
+    ->with(['categories', 'images'])
+    ->where('availability_status', 'available')
+    ->where('is_active', true)
+    ->orderByRaw('
+        (SELECT sort_no FROM category_product 
+         WHERE category_product.product_id = products.id 
+         AND category_product.category_id = ?) ASC
+    ', [$categoryId])
+    ->paginate($request->get('per_page', 20));
+    
+    return response()->json([
+        'success' => true,
+        'data' => $products->items(),
+        'meta' => [
+            'current_page' => $products->currentPage(),
+            'total' => $products->total(),
+            'per_page' => $products->perPage(),
+        ]
+    ]);
+}
+```
+
+### 9.5 エラーハンドリング
 ```php
 class ApiExceptionHandler
 {
@@ -388,6 +544,213 @@ class ApiExceptionHandler
         
         // その他のエラー処理...
     }
+}
+```
+
+### 9.6 ゲストセッション認証API仕様
+
+#### ゲストセッション開始
+```http
+POST /api/v1/auth/guest/start
+```
+
+**リクエスト**
+```json
+{
+  "device_fingerprint": "browser_chrome_win10_hash123",
+  "store_id": 1,
+  "language": "ja"
+}
+```
+
+**レスポンス（成功）**
+```json
+{
+  "success": true,
+  "data": {
+    "token": "guest_abc123def456ghi789",
+    "expires_in": 1800,
+    "device_fingerprint": "browser_chrome_win10_hash123",
+    "store_id": 1
+  },
+  "message": "ゲストセッションを開始しました"
+}
+```
+
+#### ゲストセッション更新
+```http
+POST /api/v1/auth/guest/refresh
+Authorization: Bearer guest_abc123def456ghi789
+```
+
+**リクエスト**
+```json
+{
+  "device_fingerprint": "browser_chrome_win10_hash123"
+}
+```
+
+**レスポンス（成功）**
+```json
+{
+  "success": true,
+  "data": {
+    "token": "guest_abc123def456ghi789",
+    "expires_in": 1800,
+    "last_access": "2024-01-01T12:30:00+09:00"
+  }
+}
+```
+
+#### ゲストカート操作API
+
+**カートアイテム追加**
+```http
+POST /api/v1/guest/cart/items
+Authorization: Bearer guest_abc123def456ghi789
+```
+
+**リクエスト**
+```json
+{
+  "product_id": 1,
+  "quantity": 2,
+  "options": {
+    "1": [5], // オプションID: [選択商品ID...]
+    "2": [3, 4]
+  },
+  "notes": "辛さ控えめ"
+}
+```
+
+**カート内容取得**
+```http
+GET /api/v1/guest/cart
+Authorization: Bearer guest_abc123def456ghi789
+```
+
+**レスポンス**
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "product_id": 1,
+        "product_name": "醤油ラーメン",
+        "quantity": 2,
+        "unit_price": 950,
+        "total_price": 1900,
+        "options": [
+          {
+            "option_id": 1,
+            "option_name": "麺の量",
+            "choice_id": 5,
+            "choice_name": "大盛り",
+            "choice_price": 100
+          }
+        ],
+        "notes": "辛さ控えめ"
+      }
+    ],
+    "total_amount": 2000,
+    "item_count": 2
+  }
+}
+```
+
+#### ゲスト注文作成API
+```http
+POST /api/v1/guest/orders
+Authorization: Bearer guest_abc123def456ghi789
+```
+
+**リクエスト**
+```json
+{
+  "items": [
+    {
+      "product_id": 1,
+      "quantity": 2,
+      "options": {
+        "1": [5]
+      },
+      "notes": "辛さ控えめ"
+    }
+  ],
+  "notes": "テイクアウトでお願いします"
+}
+```
+
+**レスポンス（成功）**
+```json
+{
+  "success": true,
+  "data": {
+    "id": 123,
+    "order_number": "GUEST2024010112345",
+    "guest_token": "guest_abc123def456ghi789",
+    "status": "pending",
+    "total_amount": 2000,
+    "ordered_at": "2024-01-01T12:00:00+09:00"
+  },
+  "message": "ご注文を承りました"
+}
+```
+
+#### ゲスト注文履歴取得API
+```http
+GET /api/v1/guest/orders
+Authorization: Bearer guest_abc123def456ghi789
+```
+
+**レスポンス**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 123,
+      "order_number": "GUEST2024010112345",
+      "status": "preparing",
+      "total_amount": 2000,
+      "ordered_at": "2024-01-01T12:00:00+09:00",
+      "items": [
+        {
+          "product_name": "醤油ラーメン",
+          "quantity": 2,
+          "unit_price": 950
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "total": 1
+  }
+}
+```
+
+### 9.7 エラーハンドリング（ゲストセッション）
+
+#### セッション期限切れ（401）
+```json
+{
+  "success": false,
+  "error": {
+    "code": "SESSION_EXPIRED",
+    "message": "セッションの有効期限が切れました。再度アクセスしてください"
+  }
+}
+```
+
+#### デバイス不一致（403）
+```json
+{
+  "success": false,
+  "error": {
+    "code": "DEVICE_MISMATCH",
+    "message": "別のデバイスからアクセスされています"
+  }
 }
 ```
 

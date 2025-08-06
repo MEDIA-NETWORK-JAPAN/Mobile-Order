@@ -137,7 +137,7 @@ protected $routeMiddleware = [
 // routes/web.php
 Route::middleware(['auth', 'admin'])->prefix('admin')->group(function () {
     Route::get('/dashboard', [AdminDashboardController::class, 'index'])->name('admin.dashboard');
-    Route::resource('menu-items', AdminMenuItemController::class);
+    Route::resource('menu-items', AdminProductController::class);
     Route::resource('translations', AdminTranslationController::class);
 });
 
@@ -322,7 +322,7 @@ public function run()
         ['name' => 'super_admin', 'display_name' => 'スーパー管理者'],
         ['name' => 'admin', 'display_name' => '店舗管理者'],
         ['name' => 'staff', 'display_name' => '店舗スタッフ'],
-        ['name' => 'customer', 'display_name' => 'お客様'],
+        ['name' => 'staff', 'display_name' => 'お客様'],
     ];
     
     foreach ($roles as $role) {
@@ -544,7 +544,7 @@ composer require spatie/laravel-translatable
 ```php
 use Spatie\Translatable\HasTranslations;
 
-class MenuItem extends Model
+class Product extends Model
 {
     use HasTranslations;
     
@@ -719,8 +719,8 @@ php artisan route:cache
 php artisan view:cache
 
 // Redisキャッシュ
-Cache::remember('menu_items', 3600, function () {
-    return MenuItem::with('translations')->get();
+Cache::remember('products', 3600, function () {
+    return Product::with('translations')->get();
 });
 ```
 
@@ -1184,8 +1184,8 @@ class PosPollingController extends Controller
                     case 'App\Models\Order':
                         $result['orders'] = $this->fetchOrders($entityChanges);
                         break;
-                    case 'App\Models\MenuItem':
-                        $result['menu_items'] = $this->fetchMenuItems($entityChanges);
+                    case 'App\Models\Product':
+                        $result['products'] = $this->fetchProducts($entityChanges);
                         break;
                     // 将来的な拡張用
                     case 'App\Models\Inventory':
@@ -1238,12 +1238,12 @@ class PosPollingController extends Controller
             });
     }
     
-    private function fetchMenuItems($changes)
+    private function fetchProducts($changes)
     {
         // メニューアイテムの変更を取得
         $menuItemIds = $changes->pluck('entity_id')->unique();
         
-        return MenuItem::whereIn('id', $menuItemIds)
+        return Product::whereIn('id', $menuItemIds)
             ->get()
             ->map(function ($item) {
                 return [
@@ -1301,7 +1301,7 @@ $schedule->command('changelogs:cleanup')->daily();
 namespace App\Http\Controllers\Api\Pos;
 
 use App\Http\Controllers\Controller;
-use App\Models\MenuItem;
+use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -1321,7 +1321,7 @@ class PosMenuController extends Controller
         
         DB::transaction(function () use ($validated) {
             foreach ($validated['items'] as $item) {
-                MenuItem::updateOrCreate(
+                Product::updateOrCreate(
                     ['pos_id' => $item['pos_id']],
                     [
                         'name' => $item['name'],
@@ -1363,7 +1363,7 @@ class PosPollingService
             'headers' => ['Authorization' => 'Bearer ' . $this->apiToken],
             'query' => [
                 'last_sync_id' => $this->lastSyncId,
-                'entity_types' => ['App\Models\Order', 'App\Models\MenuItem'],
+                'entity_types' => ['App\Models\Order', 'App\Models\Product'],
             ],
         ]);
         
@@ -1381,8 +1381,8 @@ class PosPollingService
                 $this->processOrders($fetchResponse['data']['orders']);
             }
             
-            if (isset($fetchResponse['data']['menu_items'])) {
-                $this->processMenuItems($fetchResponse['data']['menu_items']);
+            if (isset($fetchResponse['data']['products'])) {
+                $this->processProducts($fetchResponse['data']['products']);
             }
             
             // 4. 最後の同期IDを更新
@@ -1495,7 +1495,7 @@ php artisan make:migration create_change_logs_table
 php artisan make:migration add_pos_fields_to_users_table
 php artisan make:migration create_sessions_table
 php artisan make:migration create_orders_table
-php artisan make:migration create_menu_items_table
+php artisan make:migration create_products_table
 
 # 実行
 php artisan migrate

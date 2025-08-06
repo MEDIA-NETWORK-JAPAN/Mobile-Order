@@ -116,7 +116,6 @@ enum UserRole: string
     case SUPER_ADMIN = 'super_admin';      // システム提供者
     case ADMIN = 'admin';                  // 店舗管理者
     case STAFF = 'staff';                  // 店舗スタッフ
-    case CUSTOMER = 'customer';            // お客様
     case POS_SYSTEM = 'pos_system';        // POSシステム
 }
 
@@ -124,8 +123,9 @@ enum UserRole: string
 SUPER_ADMIN: 全機能アクセス可能
 ADMIN: 店舗設定、メニュー管理、注文管理
 STAFF: 注文確認、基本操作
-CUSTOMER: メニュー閲覧、注文送信
 POS_SYSTEM: データ同期、注文取得
+
+// ゲスト（未登録ユーザー）: メニュー閲覧、注文送信（セッション方式）
 ```
 
 ## 5. API設計方針
@@ -155,9 +155,9 @@ POS_SYSTEM: データ同期、注文取得
 ## 6. データベース設計方針
 
 ### 6.1 命名規則
-- **テーブル**: snake_case複数形（`menu_items`）
+- **テーブル**: snake_case複数形（`products`）
 - **カラム**: snake_case単数形（`created_at`）
-- **外部キー**: `{参照テーブル単数}_id`（`menu_item_id`）
+- **外部キー**: `{参照テーブル単数}_id`（`product_id`）
 
 ### 6.2 制約と整合性
 - **NOT NULL**: 必須項目は必ずNOT NULL制約

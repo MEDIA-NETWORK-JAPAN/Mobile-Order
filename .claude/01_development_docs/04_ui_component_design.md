@@ -21,7 +21,7 @@
 app/
 ├── Livewire/           # Livewireコンポーネント
 │   ├── Customer/       # お客様向け
-│   │   ├── MenuGrid.php
+│   │   ├── ProductGrid.php
 │   │   ├── CartComponent.php
 │   │   └── OrderHistory.php
 │   ├── Admin/          # 管理者向け
@@ -115,22 +115,22 @@ module.exports = {
 
 ## 4. 主要コンポーネント仕様
 
-### 4.1 MenuGrid（メニューグリッド）
+### 4.1 ProductGrid（商品グリッド）
 ```php
-// app/Livewire/Customer/MenuGrid.php
+// app/Livewire/Customer/ProductGrid.php
 <?php
 namespace App\Livewire\Customer;
 
 use Livewire\Component;
-use App\Models\MenuItem;
+use App\Models\Product;
 
-class MenuGrid extends Component
+class ProductGrid extends Component
 {
     public $categoryId = null;
     public $searchTerm = '';
     public $sortBy = 'sort_order';
     
-    // 10秒ごとに在庫状況を更新
+    // 10秒ごとに提供状態を更新
     protected $listeners = ['refreshComponent' => '$refresh'];
     
     public function mount($categoryId = null)
@@ -140,19 +140,23 @@ class MenuGrid extends Component
     
     public function render()
     {
-        $items = MenuItem::query()
-            ->when($this->categoryId, fn($q) => $q->where('category_id', $this->categoryId))
+        $items = Product::query()
+            ->when($this->categoryId, function($q) {
+                $q->whereHas('categories', function($query) {
+                    $query->where('categories.id', $this->categoryId);
+                });
+            })
             ->when($this->searchTerm, fn($q) => $q->search($this->searchTerm))
             ->orderBy($this->sortBy)
             ->get();
             
-        return view('livewire.customer.menu-grid', compact('items'));
+        return view('livewire.customer.product-grid', compact('items'));
     }
 }
 ```
 
 ```blade
-{{-- resources/views/livewire/customer/menu-grid.blade.php --}}
+{{-- resources/views/livewire/customer/product-grid.blade.php --}}
 <div wire:poll.10s class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
     @foreach($items as $item)
         <x-mary-card shadow class="cursor-pointer hover:shadow-lg transition-shadow">
@@ -164,9 +168,21 @@ class MenuGrid extends Component
                     class="w-full h-full object-cover"
                     loading="lazy"
                 >
-                @if(!$item->is_available)
+                @if($item->availability_status !== 'available')
                     <div class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-                        <span class="text-white font-bold text-lg">売り切れ</span>
+                        <span class="text-white font-bold text-lg">
+                            @switch($item->availability_status)
+                                @case('sold_out')
+                                    売り切れ
+                                    @break
+                                @case('not_arrived')
+                                    未入荷
+                                    @break
+                                @case('preparing')
+                                    準備中
+                                    @break
+                            @endswitch
+                        </span>
                     </div>
                 @endif
             </div>
@@ -178,14 +194,23 @@ class MenuGrid extends Component
             {{-- 価格とボタン --}}
             <div class="flex justify-between items-center mt-4">
                 <span class="text-xl font-bold text-primary-600">¥{{ number_format($item->price) }}</span>
-                <x-mary-button 
-                    wire:click="addToCart({{ $item->id }})"
-                    :disabled="!$item->is_available"
-                    size="sm"
-                    class="btn-primary"
-                >
-                    カートに追加
-                </x-mary-button>
+                @if($item->availability_status === 'available')
+                    <x-mary-button 
+                        wire:click="addToCart({{ $item->id }})"
+                        size="sm"
+                        class="btn-primary"
+                    >
+                        カートに追加
+                    </x-mary-button>
+                @else
+                    <div class="text-sm text-gray-500">
+                        @if($item->availability_message)
+                            {{ $item->availability_message }}
+                        @elseif($item->expected_available_time)
+                            {{ $item->expected_available_time }}ごろ提供予定
+                        @endif
+                    </div>
+                @endif
             </div>
         </x-mary-card>
     @endforeach
@@ -205,9 +230,9 @@ class CartComponent extends Component
         'toggleCart' => 'toggle'
     ];
     
-    public function addItem($menuItemId, $quantity = 1)
+    public function addItem($productId, $quantity = 1, $options = [])
     {
-        // カートに商品追加ロジック
+        // カートに商品追加ロジック（オプション付き）
         $this->emit('cartUpdated', count($this->items));
     }
     
@@ -280,7 +305,7 @@ class CartComponent extends Component
 
 {{-- エラーメッセージ --}}
 <x-mary-alert type="error">
-    在庫切れの商品が含まれています。
+    ご注文できない商品が含まれています。
 </x-mary-alert>
 
 {{-- 情報メッセージ --}}
@@ -297,17 +322,96 @@ class CartComponent extends Component
         <img src="{{ $selectedItem->image_url }}" class="w-full rounded-lg">
         <h3 class="text-xl font-bold">{{ $selectedItem->name }}</h3>
         <p>{{ $selectedItem->description }}</p>
+        <p class="text-lg font-semibold">¥{{ number_format($selectedItem->tax_in_price) }}</p>
         
         {{-- オプション選択 --}}
         @foreach($selectedItem->options as $option)
-            <div>
-                <label class="font-medium">{{ $option->name }}</label>
-                <x-mary-select 
-                    wire:model="selectedOptions.{{ $option->id }}"
-                    :options="$option->values->pluck('name', 'id')"
-                />
+            <div class="border-t pt-4">
+                <label class="font-medium">
+                    {{ $option->title }}
+                    @if($option->required)
+                        <span class="text-red-500">*必須</span>
+                    @endif
+                </label>
+                <p class="text-sm text-gray-600 mb-3">{{ $option->description }}</p>
+                
+                @if($option->selection_type === 'single')
+                    {{-- 単一選択（ラジオボタン） --}}
+                    @foreach($option->optionProducts as $choice)
+                        <label class="flex items-center justify-between p-2 border rounded mb-2">
+                            <div class="flex items-center space-x-3">
+                                <input type="radio" 
+                                       name="option_{{ $option->id }}" 
+                                       value="{{ $choice->id }}"
+                                       wire:model="selectedOptions.{{ $option->id }}"
+                                       @if($choice->pivot->default && !isset($selectedOptions[$option->id])) checked @endif>
+                                <div>
+                                    <span class="font-medium">{{ $choice->name }}</span>
+                                    @if($choice->availability_status !== 'available')
+                                        <span class="text-sm text-red-500 block">
+                                            @switch($choice->availability_status)
+                                                @case('sold_out') 売り切れ @break
+                                                @case('not_arrived') 未入荷 @break
+                                                @case('preparing') 準備中 @break
+                                            @endswitch
+                                        </span>
+                                    @endif
+                                </div>
+                            </div>
+                            <span class="font-medium">
+                                ¥{{ number_format($choice->tax_in_price) }}
+                            </span>
+                        </label>
+                    @endforeach
+                @else
+                    {{-- 複数選択（数量指定） --}}
+                    @foreach($option->optionProducts as $choice)
+                        <div class="flex items-center justify-between p-2 border rounded mb-2">
+                            <div>
+                                <span class="font-medium">{{ $choice->name }}</span>
+                                <span class="text-sm text-gray-600 block">
+                                    ¥{{ number_format($choice->tax_in_price) }}
+                                </span>
+                                @if($choice->availability_status !== 'available')
+                                    <span class="text-sm text-red-500">
+                                        @switch($choice->availability_status)
+                                            @case('sold_out') 売り切れ @break
+                                            @case('not_arrived') 未入荷 @break
+                                            @case('preparing') 準備中 @break
+                                        @endswitch
+                                    </span>
+                                @endif
+                            </div>
+                            @if($choice->availability_status === 'available')
+                                <div class="flex items-center space-x-2">
+                                    <button type="button" 
+                                            wire:click="decrementOption({{ $option->id }}, {{ $choice->id }})"
+                                            class="w-8 h-8 rounded-full border flex items-center justify-center">
+                                        -
+                                    </button>
+                                    <span class="w-8 text-center">
+                                        {{ $selectedOptions[$option->id][$choice->id] ?? 0 }}
+                                    </span>
+                                    <button type="button"
+                                            wire:click="incrementOption({{ $option->id }}, {{ $choice->id }})"
+                                            class="w-8 h-8 rounded-full border flex items-center justify-center">
+                                        +
+                                    </button>
+                                </div>
+                            @endif
+                        </div>
+                    @endforeach
+                @endif
             </div>
         @endforeach
+        
+        {{-- 合計価格表示 --}}
+        <div class="border-t pt-4">
+            <div class="flex justify-between items-center text-lg font-semibold">
+                <span>合計</span>
+                <span>¥{{ number_format($calculatedTotalPrice) }}</span>
+            </div>
+        </div>
     </div>
     
     <x-slot:actions>
@@ -444,7 +548,7 @@ xl: 1280px  /* 大型PC */
 public function loadItems()
 {
     if ($this->readyToLoad) {
-        $this->items = MenuItem::active()->get();
+        $this->items = Product::active()->get();
     }
 }
 

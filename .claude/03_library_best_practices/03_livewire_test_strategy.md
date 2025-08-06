@@ -159,34 +159,34 @@ abstract class LivewireTestCase extends TestCase
 
 ### 3.1 メニューアイテム表示テスト
 
-#### MenuGridコンポーネントテスト
+#### ProductGridコンポーネントテスト
 ```php
-// tests/Livewire/Customer/MenuGridTest.php
+// tests/Livewire/Customer/ProductGridTest.php
 <?php
 
 namespace Tests\Livewire\Customer;
 
 use Tests\LivewireTestCase;
-use App\Livewire\Customer\MenuGrid;
-use App\Models\MenuItem;
+use App\Livewire\Customer\ProductGrid;
+use App\Models\Product;
 use App\Models\Category;
 use Illuminate\Foundation\Testing\WithFaker;
 
-class MenuGridTest extends LivewireTestCase
+class ProductGridTest extends LivewireTestCase
 {
     use WithFaker;
     
-    public function test_displays_menu_items()
+    public function test_displays_products()
     {
         // Arrange
         $category = Category::factory()->create(['name' => 'メイン']);
-        $items = MenuItem::factory()->count(5)->create([
+        $items = Product::factory()->count(5)->create([
             'category_id' => $category->id,
             'is_available' => true,
         ]);
         
         // Act & Assert
-        $this->livewire(MenuGrid::class)
+        $this->livewire(ProductGrid::class)
             ->assertSee($items->first()->name)
             ->assertSee($items->first()->description)
             ->assertSee('¥' . number_format($items->first()->price));
@@ -198,39 +198,39 @@ class MenuGridTest extends LivewireTestCase
         $category1 = Category::factory()->create(['name' => 'メイン']);
         $category2 = Category::factory()->create(['name' => 'デザート']);
         
-        $mainItem = MenuItem::factory()->create([
+        $mainItem = Product::factory()->create([
             'category_id' => $category1->id,
             'name' => 'ハンバーガー',
             'is_available' => true,
         ]);
         
-        $dessertItem = MenuItem::factory()->create([
+        $dessertItem = Product::factory()->create([
             'category_id' => $category2->id,
             'name' => 'アイスクリーム',
             'is_available' => true,
         ]);
         
         // Act & Assert
-        $this->livewire(MenuGrid::class, ['categoryId' => $category1->id])
+        $this->livewire(ProductGrid::class, ['categoryId' => $category1->id])
             ->assertSee($mainItem->name)
             ->assertDontSee($dessertItem->name);
     }
     
-    public function test_searches_menu_items()
+    public function test_searches_products()
     {
         // Arrange
-        MenuItem::factory()->create([
+        Product::factory()->create([
             'name' => 'チーズバーガー',
             'is_available' => true,
         ]);
         
-        MenuItem::factory()->create([
+        Product::factory()->create([
             'name' => 'フライドポテト',
             'is_available' => true,
         ]);
         
         // Act & Assert
-        $this->livewire(MenuGrid::class)
+        $this->livewire(ProductGrid::class)
             ->set('searchTerm', 'チーズ')
             ->assertSee('チーズバーガー')
             ->assertDontSee('フライドポテト');
@@ -239,18 +239,18 @@ class MenuGridTest extends LivewireTestCase
     public function test_hides_unavailable_items()
     {
         // Arrange
-        $availableItem = MenuItem::factory()->create([
+        $availableItem = Product::factory()->create([
             'name' => '利用可能商品',
             'is_available' => true,
         ]);
         
-        $unavailableItem = MenuItem::factory()->create([
+        $unavailableItem = Product::factory()->create([
             'name' => '利用不可商品',
             'is_available' => false,
         ]);
         
         // Act & Assert
-        $this->livewire(MenuGrid::class)
+        $this->livewire(ProductGrid::class)
             ->assertSee($availableItem->name)
             ->assertDontSee($unavailableItem->name);
     }
@@ -258,10 +258,10 @@ class MenuGridTest extends LivewireTestCase
     public function test_adds_item_to_cart()
     {
         // Arrange
-        $item = MenuItem::factory()->create(['is_available' => true]);
+        $item = Product::factory()->create(['is_available' => true]);
         
         // Act & Assert
-        $this->livewire(MenuGrid::class)
+        $this->livewire(ProductGrid::class)
             ->call('addToCart', $item->id)
             ->assertDispatched('item-added-to-cart', menuItemId: $item->id)
             ->assertSet('flash.message', 'カートに追加されました');
@@ -270,10 +270,10 @@ class MenuGridTest extends LivewireTestCase
     public function test_cannot_add_unavailable_item_to_cart()
     {
         // Arrange
-        $item = MenuItem::factory()->create(['is_available' => false]);
+        $item = Product::factory()->create(['is_available' => false]);
         
         // Act & Assert
-        $this->livewire(MenuGrid::class)
+        $this->livewire(ProductGrid::class)
             ->call('addToCart', $item->id)
             ->assertNotDispatched('item-added-to-cart')
             ->assertSet('flash.error', 'BIZ-STK-001');
@@ -282,7 +282,7 @@ class MenuGridTest extends LivewireTestCase
     public function test_polling_refreshes_menu()
     {
         // Arrange
-        $this->livewire(MenuGrid::class)
+        $this->livewire(ProductGrid::class)
             ->assertMethodWiredToRefresh('$refresh');
     }
 }
@@ -299,7 +299,7 @@ namespace Tests\Livewire\Customer;
 
 use Tests\LivewireTestCase;
 use App\Livewire\Customer\CartDrawer;
-use App\Models\MenuItem;
+use App\Models\Product;
 use Illuminate\Support\Facades\Session;
 
 class CartDrawerTest extends LivewireTestCase
@@ -313,7 +313,7 @@ class CartDrawerTest extends LivewireTestCase
     public function test_adds_item_to_cart()
     {
         // Arrange
-        $item = MenuItem::factory()->create([
+        $item = Product::factory()->create([
             'name' => 'ハンバーガー',
             'price' => 500,
             'is_available' => true,
@@ -333,7 +333,7 @@ class CartDrawerTest extends LivewireTestCase
     public function test_increases_quantity_for_existing_item()
     {
         // Arrange
-        $item = MenuItem::factory()->create(['price' => 500, 'is_available' => true]);
+        $item = Product::factory()->create(['price' => 500, 'is_available' => true]);
         
         // Act & Assert
         $this->livewire(CartDrawer::class)
@@ -347,7 +347,7 @@ class CartDrawerTest extends LivewireTestCase
     public function test_removes_item_from_cart()
     {
         // Arrange
-        $item = MenuItem::factory()->create(['is_available' => true]);
+        $item = Product::factory()->create(['is_available' => true]);
         
         // Act & Assert
         $this->livewire(CartDrawer::class)
@@ -359,8 +359,8 @@ class CartDrawerTest extends LivewireTestCase
     public function test_calculates_total_price()
     {
         // Arrange
-        $item1 = MenuItem::factory()->create(['price' => 500, 'is_available' => true]);
-        $item2 = MenuItem::factory()->create(['price' => 300, 'is_available' => true]);
+        $item1 = Product::factory()->create(['price' => 500, 'is_available' => true]);
+        $item2 = Product::factory()->create(['price' => 300, 'is_available' => true]);
         
         // Act & Assert
         $component = $this->livewire(CartDrawer::class)
@@ -383,7 +383,7 @@ class CartDrawerTest extends LivewireTestCase
     public function test_persists_cart_in_session()
     {
         // Arrange
-        $item = MenuItem::factory()->create(['is_available' => true]);
+        $item = Product::factory()->create(['is_available' => true]);
         
         // Act
         $this->livewire(CartDrawer::class)
@@ -397,7 +397,7 @@ class CartDrawerTest extends LivewireTestCase
     public function test_loads_cart_from_session_on_mount()
     {
         // Arrange
-        $item = MenuItem::factory()->create(['price' => 500, 'is_available' => true]);
+        $item = Product::factory()->create(['price' => 500, 'is_available' => true]);
         Session::put('cart', [
             [
                 'id' => $item->id,
@@ -418,7 +418,7 @@ class CartDrawerTest extends LivewireTestCase
     public function test_checkout_process()
     {
         // Arrange
-        $item = MenuItem::factory()->create(['is_available' => true]);
+        $item = Product::factory()->create(['is_available' => true]);
         
         // Act & Assert
         $this->livewire(CartDrawer::class)
@@ -431,19 +431,19 @@ class CartDrawerTest extends LivewireTestCase
 
 ### 3.3 フォーム処理テスト
 
-#### MenuItemFormコンポーネントテスト
+#### ProductFormコンポーネントテスト
 ```php
-// tests/Livewire/Admin/MenuItemFormTest.php
+// tests/Livewire/Admin/ProductFormTest.php
 <?php
 
 namespace Tests\Livewire\Admin;
 
 use Tests\LivewireTestCase;
-use App\Livewire\Admin\MenuItemForm;
-use App\Models\MenuItem;
+use App\Livewire\Admin\ProductForm;
+use App\Models\Product;
 use App\Models\Category;
 
-class MenuItemFormTest extends LivewireTestCase
+class ProductFormTest extends LivewireTestCase
 {
     public function test_creates_new_menu_item()
     {
@@ -451,7 +451,7 @@ class MenuItemFormTest extends LivewireTestCase
         $category = Category::factory()->create();
         
         // Act & Assert
-        $this->livewire(MenuItemForm::class)
+        $this->livewire(ProductForm::class)
             ->set('name', 'テストバーガー')
             ->set('description', 'テスト用の商品説明')
             ->set('price', 800)
@@ -462,7 +462,7 @@ class MenuItemFormTest extends LivewireTestCase
             ->assertRedirect('/admin/menu-items');
         
         // データベース確認
-        $this->assertDatabaseHas('menu_items', [
+        $this->assertDatabaseHas('products', [
             'name' => 'テストバーガー',
             'description' => 'テスト用の商品説明',
             'price' => 800,
@@ -475,20 +475,20 @@ class MenuItemFormTest extends LivewireTestCase
     {
         // Arrange
         $category = Category::factory()->create();
-        $item = MenuItem::factory()->create([
+        $item = Product::factory()->create([
             'name' => '元の名前',
             'price' => 500
         ]);
         
         // Act & Assert
-        $this->livewire(MenuItemForm::class, ['item' => $item])
+        $this->livewire(ProductForm::class, ['item' => $item])
             ->set('name', '更新された名前')
             ->set('price', 600)
             ->call('save')
             ->assertHasNoErrors();
         
         // データベース確認
-        $this->assertDatabaseHas('menu_items', [
+        $this->assertDatabaseHas('products', [
             'id' => $item->id,
             'name' => '更新された名前',
             'price' => 600,
@@ -497,7 +497,7 @@ class MenuItemFormTest extends LivewireTestCase
     
     public function test_validates_required_fields()
     {
-        $this->livewire(MenuItemForm::class)
+        $this->livewire(ProductForm::class)
             ->set('name', '')
             ->set('description', '')
             ->set('price', '')
@@ -509,7 +509,7 @@ class MenuItemFormTest extends LivewireTestCase
     
     public function test_validates_price_is_numeric()
     {
-        $this->livewire(MenuItemForm::class)
+        $this->livewire(ProductForm::class)
             ->set('price', 'invalid')
             ->call('save')
             ->assertHasError('price', 'numeric');
@@ -517,7 +517,7 @@ class MenuItemFormTest extends LivewireTestCase
     
     public function test_validates_price_is_positive()
     {
-        $this->livewire(MenuItemForm::class)
+        $this->livewire(ProductForm::class)
             ->set('price', -100)
             ->call('save')
             ->assertHasError('price', 'min');
@@ -525,7 +525,7 @@ class MenuItemFormTest extends LivewireTestCase
     
     public function test_validates_category_exists()
     {
-        $this->livewire(MenuItemForm::class)
+        $this->livewire(ProductForm::class)
             ->set('category_id', 999)
             ->call('save')
             ->assertHasError('category_id', 'exists');
@@ -533,7 +533,7 @@ class MenuItemFormTest extends LivewireTestCase
     
     public function test_validates_name_max_length()
     {
-        $this->livewire(MenuItemForm::class)
+        $this->livewire(ProductForm::class)
             ->set('name', str_repeat('a', 256))
             ->call('save')
             ->assertHasError('name', 'max');
@@ -542,13 +542,13 @@ class MenuItemFormTest extends LivewireTestCase
     public function test_displays_error_on_save_failure()
     {
         // データベースエラーをシミュレート
-        $this->mock(MenuItem::class, function ($mock) {
+        $this->mock(Product::class, function ($mock) {
             $mock->shouldReceive('save')->andThrow(new \Exception('Database error'));
         });
         
         $category = Category::factory()->create();
         
-        $this->livewire(MenuItemForm::class)
+        $this->livewire(ProductForm::class)
             ->set('name', 'テスト商品')
             ->set('description', 'テスト説明')
             ->set('price', 500)
@@ -586,7 +586,7 @@ class AdminDashboardTest extends LivewireTestCase
     public function test_requires_admin_role()
     {
         // Arrange
-        $user = User::factory()->create(['role' => 'customer']);
+        $user = User::factory()->create(['role' => 'staff']);
         
         // Act & Assert
         $this->actingAs($user)
@@ -630,19 +630,19 @@ class AdminDashboardTest extends LivewireTestCase
 namespace Tests\Livewire;
 
 use Tests\LivewireTestCase;
-use App\Livewire\Customer\MenuGrid;
+use App\Livewire\Customer\ProductGrid;
 use App\Livewire\Customer\CartDrawer;
-use App\Models\MenuItem;
+use App\Models\Product;
 
 class EventTest extends LivewireTestCase
 {
     public function test_menu_grid_dispatches_add_to_cart_event()
     {
         // Arrange
-        $item = MenuItem::factory()->create(['is_available' => true]);
+        $item = Product::factory()->create(['is_available' => true]);
         
         // Act & Assert
-        $this->livewire(MenuGrid::class)
+        $this->livewire(ProductGrid::class)
             ->call('addToCart', $item->id)
             ->assertDispatched('item-added-to-cart', menuItemId: $item->id);
     }
@@ -650,7 +650,7 @@ class EventTest extends LivewireTestCase
     public function test_cart_drawer_listens_to_add_to_cart_event()
     {
         // Arrange
-        $item = MenuItem::factory()->create(['is_available' => true]);
+        $item = Product::factory()->create(['is_available' => true]);
         
         // Act & Assert
         $this->livewire(CartDrawer::class)
@@ -662,7 +662,7 @@ class EventTest extends LivewireTestCase
     public function test_cart_counter_updates_on_cart_change()
     {
         // Arrange
-        $item = MenuItem::factory()->create(['is_available' => true]);
+        $item = Product::factory()->create(['is_available' => true]);
         
         // Act & Assert
         $this->livewire(CartDrawer::class)
@@ -687,13 +687,13 @@ class EventTest extends LivewireTestCase
 namespace Tests\Livewire;
 
 use Tests\LivewireTestCase;
-use App\Livewire\Customer\MenuGrid;
+use App\Livewire\Customer\ProductGrid;
 
 class BrowserEventTest extends LivewireTestCase
 {
     public function test_dispatches_browser_event()
     {
-        $this->livewire(MenuGrid::class)
+        $this->livewire(ProductGrid::class)
             ->call('showSuccessMessage')
             ->assertDispatchedBrowserEvent('show-toast', [
                 'type' => 'success',
@@ -713,8 +713,8 @@ class BrowserEventTest extends LivewireTestCase
 namespace Tests\Livewire\Integration;
 
 use Tests\LivewireTestCase;
-use App\Livewire\Customer\MenuGrid;
-use App\Models\MenuItem;
+use App\Livewire\Customer\ProductGrid;
+use App\Models\Product;
 use App\Models\Category;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 
@@ -726,7 +726,7 @@ class MenuIntegrationTest extends LivewireTestCase
     {
         // Arrange
         $category = Category::create(['name' => 'テストカテゴリー']);
-        $item = MenuItem::create([
+        $item = Product::create([
             'name' => 'テスト商品',
             'description' => 'テスト説明',
             'price' => 500,
@@ -735,12 +735,12 @@ class MenuIntegrationTest extends LivewireTestCase
         ]);
         
         // Act & Assert
-        $this->livewire(MenuGrid::class)
+        $this->livewire(ProductGrid::class)
             ->assertSee($item->name)
             ->assertSee($category->name);
         
         // データベース状態確認
-        $this->assertDatabaseHas('menu_items', [
+        $this->assertDatabaseHas('products', [
             'id' => $item->id,
             'name' => 'テスト商品',
         ]);
@@ -749,7 +749,7 @@ class MenuIntegrationTest extends LivewireTestCase
     public function test_search_with_database_like_query()
     {
         // Arrange
-        MenuItem::create([
+        Product::create([
             'name' => 'チーズバーガー',
             'description' => '美味しいハンバーガー',
             'price' => 600,
@@ -757,7 +757,7 @@ class MenuIntegrationTest extends LivewireTestCase
             'is_available' => true,
         ]);
         
-        MenuItem::create([
+        Product::create([
             'name' => 'フライドポテト',
             'description' => 'サクサクのポテト',
             'price' => 300,
@@ -766,7 +766,7 @@ class MenuIntegrationTest extends LivewireTestCase
         ]);
         
         // Act & Assert
-        $this->livewire(MenuGrid::class)
+        $this->livewire(ProductGrid::class)
             ->set('searchTerm', 'チーズ')
             ->assertSee('チーズバーガー')
             ->assertDontSee('フライドポテト');
@@ -840,8 +840,8 @@ class PaymentIntegrationTest extends LivewireTestCase
 namespace Tests\Livewire\Performance;
 
 use Tests\LivewireTestCase;
-use App\Livewire\Customer\MenuGrid;
-use App\Models\MenuItem;
+use App\Livewire\Customer\ProductGrid;
+use App\Models\Product;
 use App\Models\Category;
 use Illuminate\Support\Facades\DB;
 
@@ -851,12 +851,12 @@ class QueryOptimizationTest extends LivewireTestCase
     {
         // Arrange
         $category = Category::factory()->create();
-        MenuItem::factory()->count(10)->create(['category_id' => $category->id]);
+        Product::factory()->count(10)->create(['category_id' => $category->id]);
         
         // Act & Assert
         DB::enableQueryLog();
         
-        $this->livewire(MenuGrid::class)->assertOk();
+        $this->livewire(ProductGrid::class)->assertOk();
         
         $queryCount = count(DB::getQueryLog());
         
@@ -870,12 +870,12 @@ class QueryOptimizationTest extends LivewireTestCase
     {
         // Arrange
         $category = Category::factory()->create();
-        MenuItem::factory()->count(100)->create(['category_id' => $category->id]);
+        Product::factory()->count(100)->create(['category_id' => $category->id]);
         
         // Act
         $startTime = microtime(true);
         
-        $this->livewire(MenuGrid::class)->assertOk();
+        $this->livewire(ProductGrid::class)->assertOk();
         
         $endTime = microtime(true);
         $executionTime = $endTime - $startTime;
@@ -891,7 +891,7 @@ class QueryOptimizationTest extends LivewireTestCase
 public function test_memory_usage_for_large_cart()
 {
     // Arrange
-    $items = MenuItem::factory()->count(50)->create(['is_available' => true]);
+    $items = Product::factory()->count(50)->create(['is_available' => true]);
     
     $initialMemory = memory_get_usage();
     
@@ -920,8 +920,8 @@ public function test_memory_usage_for_large_cart()
 namespace Tests\Livewire\ErrorHandling;
 
 use Tests\LivewireTestCase;
-use App\Livewire\Customer\MenuGrid;
-use App\Models\MenuItem;
+use App\Livewire\Customer\ProductGrid;
+use App\Models\Product;
 use App\Exceptions\BusinessException;
 
 class ExceptionHandlingTest extends LivewireTestCase
@@ -929,20 +929,20 @@ class ExceptionHandlingTest extends LivewireTestCase
     public function test_handles_business_exception()
     {
         // Arrange
-        $this->mock(MenuItem::class, function ($mock) {
+        $this->mock(Product::class, function ($mock) {
             $mock->shouldReceive('findOrFail')
                 ->andThrow(new BusinessException('BIZ-STK-001', '在庫不足です'));
         });
         
         // Act & Assert
-        $this->livewire(MenuGrid::class)
+        $this->livewire(ProductGrid::class)
             ->call('addToCart', 1)
             ->assertSet('flash.error', '在庫不足です');
     }
     
     public function test_handles_validation_errors()
     {
-        $this->livewire(MenuItemForm::class)
+        $this->livewire(ProductForm::class)
             ->set('name', '')
             ->set('price', 'invalid')
             ->call('save')
@@ -956,7 +956,7 @@ class ExceptionHandlingTest extends LivewireTestCase
         // データベース接続エラーをシミュレート
         DB::shouldReceive('connection')->andThrow(new \Exception('Connection failed'));
         
-        $this->livewire(MenuGrid::class)
+        $this->livewire(ProductGrid::class)
             ->assertSee('システムエラーが発生しました');
     }
 }
@@ -973,14 +973,14 @@ namespace Tests\Browser;
 
 use Laravel\Dusk\Browser;
 use Tests\DuskTestCase;
-use App\Models\MenuItem;
+use App\Models\Product;
 use App\Models\User;
 
 class LivewireInteractionTest extends DuskTestCase
 {
     public function test_add_to_cart_with_javascript()
     {
-        $item = MenuItem::factory()->create(['is_available' => true]);
+        $item = Product::factory()->create(['is_available' => true]);
         
         $this->browse(function (Browser $browser) use ($item) {
             $browser->visit('/menu')
@@ -994,8 +994,8 @@ class LivewireInteractionTest extends DuskTestCase
     
     public function test_real_time_search()
     {
-        MenuItem::factory()->create(['name' => 'チーズバーガー']);
-        MenuItem::factory()->create(['name' => 'フライドポテト']);
+        Product::factory()->create(['name' => 'チーズバーガー']);
+        Product::factory()->create(['name' => 'フライドポテト']);
         
         $this->browse(function (Browser $browser) {
             $browser->visit('/menu')
@@ -1008,7 +1008,7 @@ class LivewireInteractionTest extends DuskTestCase
     
     public function test_modal_interactions()
     {
-        $item = MenuItem::factory()->create();
+        $item = Product::factory()->create();
         
         $this->browse(function (Browser $browser) use ($item) {
             $browser->visit('/menu')
@@ -1124,10 +1124,10 @@ public function checkValidation()
 public function test_example()
 {
     // Arrange - テストデータの準備
-    $item = MenuItem::factory()->create();
+    $item = Product::factory()->create();
     
     // Act - テスト対象の実行
-    $result = $this->livewire(MenuGrid::class)
+    $result = $this->livewire(ProductGrid::class)
         ->call('addToCart', $item->id);
     
     // Assert - 結果の検証
@@ -1139,8 +1139,8 @@ public function test_example()
 
 #### ファクトリーの活用
 ```php
-// database/factories/MenuItemFactory.php
-class MenuItemFactory extends Factory
+// database/factories/ProductFactory.php
+class ProductFactory extends Factory
 {
     public function definition()
     {

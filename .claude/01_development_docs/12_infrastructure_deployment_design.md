@@ -896,7 +896,7 @@ ab -n 100 -c 10 http://localhost/api/v1/menu-items
 
 # 4. データベース最適化
 echo "Optimizing database..."
-mysql -u $DB_USERNAME -p$DB_PASSWORD $DB_DATABASE -e "OPTIMIZE TABLE orders, order_items, menu_items;"
+mysql -u $DB_USERNAME -p$DB_PASSWORD $DB_DATABASE -e "OPTIMIZE TABLE orders, order_items, products;"
 
 echo "=== Weekly Maintenance Completed ==="
 ```
