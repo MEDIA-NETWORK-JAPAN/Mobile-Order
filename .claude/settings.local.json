@@ -62,7 +62,10 @@
       "Bash(ls:*)",
       "Bash(find:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(sail down:*)",
+      "Bash(sail up:*)",
+      "Bash(./vendor/bin/sail down:*)"
     ],
     "deny": [
       "Bash(sudo:*)",

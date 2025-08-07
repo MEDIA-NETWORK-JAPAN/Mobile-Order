@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS `mydb`.`categories` (
   `name` VARCHAR(255) NOT NULL, # カテゴリ名
   `created_at` TIMESTAMP NULL,
   `updated_at` TIMESTAMP NULL,
-  `sort_no` INT NULL, # ソート順
+  `sort_order` INT NOT NULL, # ソート順
   PRIMARY KEY (`id`));
 
 
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS `mydb`.`category_product` (
   `id` DECIMAL NOT NULL, # 紐付けID
   `product_id` DECIMAL NOT NULL, # 商品ID
   `category_id` DECIMAL NOT NULL, # カテゴリID
-  `sort_no` INT NOT NULL, # ソート順
+  `sort_order` INT NOT NULL, # ソート順
   `created_at` TIMESTAMP NULL,
   `updated_at` TIMESTAMP NULL,
   PRIMARY KEY (`id`),
@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS `mydb`.`option_detail` (
   `option_id` DECIMAL NOT NULL, # オプションID
   `product_id` DECIMAL NOT NULL, # 商品ID
   `default` TINYINT NOT NULL, # デフォルトフラグ(画面表示時に選択される)
-  `sort_no` INT NOT NULL, # ソート順
+  `sort_order` INT NOT NULL, # ソート順
   `created_at` TIMESTAMP NULL,
   `updated_at` TIMESTAMP NULL,
   PRIMARY KEY (`id`),
@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS `mydb`.`product_to_options` (
   `id` DECIMAL NOT NULL, # 紐付けID
   `product_id` DECIMAL NOT NULL, # 商品ID
   `option_id` DECIMAL NOT NULL, # オプションID
-  `sort_no` INT NOT NULL, # ソート順
+  `sort_order` INT NOT NULL, # ソート順
   `created_at` TIMESTAMP NULL,
   `updated_at` TIMESTAMP NULL,
   PRIMARY KEY (`id`),

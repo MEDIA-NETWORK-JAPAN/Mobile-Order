@@ -13,8 +13,9 @@
 - **非推奨通知**: レスポンスヘッダーで通知
 
 ### 1.3 認証方式
-- **席セッション**: QRコード読み取り後のトークン認証
-- **ゲストセッション**: 自動生成トークン + デバイスフィンガープリント
+- **2層認証システム（モバイル）**: 
+  - 第1層: 席セッション（QRコード → 同席者間共有）
+  - 第2層: ゲストセッション（個人識別 + 不正防止）
 - **POS API**: Bearer Token認証（Laravel Sanctum）
 - **管理画面**: Session認証（Laravel Breeze）
 
@@ -54,9 +55,11 @@ X-Request-ID: {uuid}
 
 ### 3.2 リクエストボディ例
 ```json
-// POST /api/v1/orders
+// POST /api/v1/orders（2層認証対応）
 {
-  "session_id": "123e4567-e89b-12d3-a456-426614174000",
+  "session_id": 123,  // 第1層: 席セッション（同席者共有用）
+  "guest_token": "guest_abc123def456",  // 第2層: ゲスト認証（個人識別用）
+  "device_fingerprint": "browser_chrome_win10_hash123",  // デバイス識別
   "items": [
     {
       "product_id": 1,
@@ -454,7 +457,7 @@ public function show($id)
         },
         'options' => function($query) {
             $query->with(['optionProducts' => function($query) {
-                $query->orderBy('sort_no');
+                $query->orderBy('sort_order');
             }]);
         }
     ])->findOrFail($id);
@@ -511,7 +514,7 @@ public function getCategoryProducts($categoryId, Request $request)
     ->where('availability_status', 'available')
     ->where('is_active', true)
     ->orderByRaw('
-        (SELECT sort_no FROM category_product 
+        (SELECT sort_order FROM category_product 
          WHERE category_product.product_id = products.id 
          AND category_product.category_id = ?) ASC
     ', [$categoryId])
@@ -619,11 +622,10 @@ Authorization: Bearer guest_abc123def456ghi789
 {
   "product_id": 1,
   "quantity": 2,
-  "options": {
-    "1": [5], // オプションID: [選択商品ID...]
-    "2": [3, 4]
-  },
-  "notes": "辛さ控えめ"
+  "options": [
+    {"option_id": 10, "product_id": 201},  // シンプルな配列形式
+    {"option_id": 11, "product_id": 202}
+  ]
 }
 ```
 
@@ -643,27 +645,37 @@ Authorization: Bearer guest_abc123def456ghi789
         "product_id": 1,
         "product_name": "醤油ラーメン",
         "quantity": 2,
-        "unit_price": 950,
-        "total_price": 1900,
+        "unit_price": 1200,
         "options": [
           {
-            "option_id": 1,
-            "option_name": "麺の量",
-            "choice_id": 5,
-            "choice_name": "大盛り",
-            "choice_price": 100
+            "option_id": 10,
+            "product_id": 201,
+            "name": "チャーシュー追加",
+            "price": 300
           }
         ],
-        "notes": "辛さ控えめ"
+        "subtotal": 3000
       }
     ],
-    "total_amount": 2000,
+    "total_amount": 3000,
     "item_count": 2
   }
 }
 ```
 
-#### ゲスト注文作成API
+**カートアイテム削除**
+```http
+DELETE /api/v1/guest/cart/items/{product_id}
+Authorization: Bearer guest_abc123def456ghi789
+```
+
+**カートクリア**
+```http
+DELETE /api/v1/guest/cart
+Authorization: Bearer guest_abc123def456ghi789
+```
+
+#### ゲスト注文作成API（2層認証対応）
 ```http
 POST /api/v1/guest/orders
 Authorization: Bearer guest_abc123def456ghi789
@@ -672,6 +684,8 @@ Authorization: Bearer guest_abc123def456ghi789
 **リクエスト**
 ```json
 {
+  "session_id": 123,  // 席セッション（注文履歴共有用）
+  "device_fingerprint": "browser_chrome_win10_hash123",  // デバイス識別（不正防止）
   "items": [
     {
       "product_id": 1,
@@ -692,8 +706,10 @@ Authorization: Bearer guest_abc123def456ghi789
   "success": true,
   "data": {
     "id": 123,
-    "order_number": "GUEST2024010112345",
+    "order_number": "2024010112345",
+    "session_id": 123,
     "guest_token": "guest_abc123def456ghi789",
+    "device_fingerprint": "browser_chrome_win10_hash123",
     "status": "pending",
     "total_amount": 2000,
     "ordered_at": "2024-01-01T12:00:00+09:00"
@@ -771,6 +787,7 @@ GET /api/v1/admin/cart-analytics/funnels     # コンバージョンファネル
 # トラブルシューティング用
 GET /api/v1/admin/cart-logs                  # カートログ検索
 GET /api/v1/admin/cart-logs/{guest_token}    # 特定ゲストの操作履歴
+GET /api/v1/admin/cart-logs/errors           # エラーログ一覧
 ```
 
 ### 10.2 レコメンデーション機能
@@ -785,7 +802,120 @@ POST /api/v1/notifications/subscribe        # 通知購読
 POST /api/v1/notifications/push             # プッシュ送信
 ```
 
-## 11. POS翻訳サービス
+## 11. 並び替えAPI
+
+### 11.1 汎用ソート更新API
+```http
+PUT /api/v1/admin/sort-order
+Authorization: Bearer {admin_token}
+```
+
+**リクエスト**
+```json
+{
+  "model": "categories",  // または "products", "options" など
+  "parent_id": 1,  // 親IDが必要な場合（category_productなど）
+  "items": [
+    {"id": 5, "sort_order": 1},
+    {"id": 3, "sort_order": 2},
+    {"id": 7, "sort_order": 3},
+    {"id": 1, "sort_order": 4},
+    {"id": 9, "sort_order": 5}
+  ]
+}
+```
+
+**レスポンス（成功）**
+```json
+{
+  "success": true,
+  "message": "並び順を更新しました",
+  "updated_count": 5
+}
+```
+
+### 11.2 カテゴリ並び替え
+```http
+PUT /api/v1/admin/categories/sort
+Authorization: Bearer {admin_token}
+```
+
+**リクエスト**
+```json
+{
+  "category_ids": [5, 3, 7, 1, 9]  // 新しい順序
+}
+```
+
+### 11.3 カテゴリ内商品並び替え
+```http
+PUT /api/v1/admin/categories/{category_id}/products/sort
+Authorization: Bearer {admin_token}
+```
+
+**リクエスト**
+```json
+{
+  "product_ids": [12, 8, 15, 3, 20]  // 新しい順序
+}
+```
+
+### 11.4 商品オプション並び替え
+```http
+PUT /api/v1/admin/products/{product_id}/options/sort
+Authorization: Bearer {admin_token}
+```
+
+**リクエスト**
+```json
+{
+  "option_ids": [2, 1, 4, 3]  // 新しい順序
+}
+```
+
+### 11.5 商品画像並び替え
+```http
+PUT /api/v1/admin/products/{product_id}/images/sort
+Authorization: Bearer {admin_token}
+```
+
+**リクエスト**
+```json
+{
+  "image_ids": [4, 2, 1, 3]  // 新しい順序
+}
+```
+
+### 11.6 バッチ更新の実装例
+```php
+// app/Http/Controllers/Api/Admin/SortOrderController.php
+public function updateSortOrder(Request $request)
+{
+    $validated = $request->validate([
+        'model' => 'required|in:categories,products,options,images',
+        'parent_id' => 'nullable|integer',
+        'items' => 'required|array',
+        'items.*.id' => 'required|integer',
+        'items.*.sort_order' => 'required|integer|min:1'
+    ]);
+    
+    DB::transaction(function () use ($validated) {
+        foreach ($validated['items'] as $item) {
+            DB::table($validated['model'])
+                ->where('id', $item['id'])
+                ->update(['sort_order' => $item['sort_order']]);
+        }
+    });
+    
+    return response()->json([
+        'success' => true,
+        'message' => '並び順を更新しました',
+        'updated_count' => count($validated['items'])
+    ]);
+}
+```
+
+## 12. POS翻訳サービス
 
 ### 11.1 翻訳同期API
 ```http

@@ -6,8 +6,34 @@
 本システムでは3種類の認証方式を使い分け、各ユーザータイプに最適な認証機能を提供します。
 
 1. **Laravel Breeze**（Web認証）- 管理者・スタッフ用
-2. **Laravel Sanctum**（モバイルAPI）- お客様用
+2. **2層認証システム**（モバイルAPI）- お客様用
 3. **Laravel Sanctum**（POS API）- POSシステム用
+
+### 1.2 2層認証システムの設計思想
+
+お客様向けモバイルAPIでは、セキュリティと利便性を両立するため2層の認証・識別システムを採用しています：
+
+#### **第1層: 席セッション認証（sessions）**
+- **目的**: 同席者間での注文履歴共有
+- **管理場所**: データベース（sessionsテーブル）
+- **識別子**: QRコード → session_id
+- **有効期限**: 3時間（席の利用時間）
+- **共有範囲**: 同じテーブルの全利用者
+
+#### **第2層: ゲストセッション認証（Redis）**
+- **目的**: 個人識別・不正アクセス防止・端末特定
+- **管理場所**: Redis（guest_session:{token}）
+- **識別子**: guest_token + device_fingerprint
+- **有効期限**: 30分（アクティビティで自動延長）
+- **特定機能**: 注文履歴から「誰が注文したか」を視覚化
+
+#### **協調動作による価値**
+```
+【席セッション】   【ゲストセッション】     【実現される価値】
+QRコード読取  +    端末識別・認証    →    セキュアな個人注文
+同席者共有   +    個人特定        →    注文者の明確化  
+履歴管理     +    不正防止        →    安全な注文環境
+```
 
 ### 1.2 ユーザー役割
 ```php
@@ -125,30 +151,25 @@ class ExtendSessionOnActivity
 }
 ```
 
-## 3. Laravel Sanctum（モバイルAPI）
+## 3. ゲスト認証（モバイルAPI）
 
 ### 3.1 対象ユーザー
 - **CUSTOMER**: お客様のスマートフォン
 
 ### 3.2 認証フロー
 ```
-1. QRコード読み取り → セッション開始
-2. 一時トークン発行（session_id ベース）
-3. お客様情報登録（任意）
-4. APIアクセス時にBearer Token使用
+1. 店舗アクセス → ゲストトークン自動生成
+2. QRコード読み取り → 席情報との紐付け（任意）
+3. デバイス識別 → device_fingerprint設定
+4. APIアクセス時にゲストトークンを使用（Bearer形式）
 ```
 
-### 3.3 トークン設定
+### 3.3 Redis設定
 ```php
-// config/sanctum.php
-'expiration' => 60, // 1時間（最終操作から）
-'token_prefix' => env('SANCTUM_TOKEN_PREFIX', ''),
-
-'middleware' => [
-    'authenticate_session' => Laravel\Sanctum\Http\Middleware\AuthenticateSession::class,
-    'encrypt_cookies' => App\Http\Middleware\EncryptCookies::class,
-    'validate_csrf_token' => App\Http\Middleware\VerifyCsrfToken::class,
-],
+// ゲストセッション管理
+'guest_session_ttl' => 1800, // 30分
+'guest_cart_ttl' => 1800,    // 30分
+'device_fingerprint_ttl' => 86400, // 24時間
 ```
 
 ### 3.4 API認証実装
@@ -189,27 +210,57 @@ class MobileApiController extends Controller
 
 ### 3.5 ゲスト認証実装
 ```php
-// User.php Model
-class User extends Authenticatable
+// ゲストセッションコントローラー
+class GuestSessionController extends Controller
 {
-    public static function createTemporaryCustomer(Session $session): self
+    public function create(Request $request)
     {
-        return self::create([
-            'name' => 'Guest_' . $session->id,
-            'email' => 'guest_' . $session->id . '@temp.local',
-            'password' => Hash::make(Str::random(32)),
-            // ゲストユーザー - usersテーブルに登録せず、セッション方式で管理
-            'store_id' => $session->store_id,
-            'is_temporary' => true,
+        $storeId = $request->input('store_id');
+        $deviceFingerprint = $request->header('X-Device-Fingerprint');
+        $sessionId = $request->input('session_id'); // QRコード経由の場合
+        
+        // ゲストトークン生成
+        $guestToken = 'guest_' . Str::random(32);
+        
+        // Redisにセッション保存
+        Redis::hmset("guest_session:{$guestToken}", [
+            'token' => $guestToken,
+            'device_fingerprint' => $deviceFingerprint,
+            'store_id' => $storeId,
+            'session_id' => $sessionId,
+            'created_at' => now()->toISOString(),
+            'last_access' => now()->toISOString(),
+            'language' => $request->input('language', 'ja')
+        ]);
+        Redis::expire("guest_session:{$guestToken}", 1800); // 30分TTL
+        
+        // カート初期化
+        Redis::hmset("guest_cart:{$guestToken}", [
+            'items' => json_encode([]),
+            'updated_at' => now()->toISOString()
+        ]);
+        Redis::expire("guest_cart:{$guestToken}", 1800);
+        
+        return response()->json([
+            'guest_token' => $guestToken,
+            'expires_in' => 1800
         ]);
     }
     
-    public function createSessionToken(Session $session): string
+    public function extendSession(Request $request)
     {
-        return $this->createToken('session-' . $session->id, [
-            'mobile:order', 
-            'mobile:menu'
-        ])->plainTextToken;
+        $guestToken = $request->bearerToken();
+        
+        // TTL延長（アクティビティ時）
+        if (Redis::exists("guest_session:{$guestToken}")) {
+            Redis::expire("guest_session:{$guestToken}", 1800);
+            Redis::expire("guest_cart:{$guestToken}", 1800);
+            Redis::hset("guest_session:{$guestToken}", 'last_access', now()->toISOString());
+            
+            return response()->json(['extended' => true]);
+        }
+        
+        return response()->json(['error' => 'Session not found'], 404);
     }
 }
 ```

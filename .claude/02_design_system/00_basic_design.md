@@ -181,15 +181,60 @@ class MenuCard extends Component
 }
 ```
 
-## 7. Mary UIカスタマイズ戦略
+## 7. ブラウザバック無効化実装
 
-### 7.1 推奨アプローチ
+### 7.1 基本実装パターン
+```javascript
+// Alpine.js コンポーネントとして実装
+Alpine.data('preventBrowserBack', () => ({
+    init() {
+        // 履歴を操作して戻るボタンを無効化
+        this.addHistoryState();
+        
+        // popstateイベントをリッスン（サイレント処理）
+        window.addEventListener('popstate', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            this.addHistoryState();
+            return false;
+        });
+    },
+    
+    addHistoryState() {
+        window.history.pushState(
+            { preventBack: true }, 
+            document.title, 
+            window.location.href
+        );
+    }
+}))
+```
+
+### 7.2 Livewire統合
+```blade
+{{-- レイアウトファイルに追加 --}}
+<body x-data="preventBrowserBack" class="bg-gray-50">
+    {{ $slot }}
+    
+    {{-- アプリ内ナビゲーション --}}
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t">
+        <button wire:click="navigateBack" class="p-4">
+            <svg><!-- 戻るアイコン --></svg>
+            <span>戻る</span>
+        </button>
+    </nav>
+</body>
+```
+
+## 8. Mary UIカスタマイズ戦略
+
+### 8.1 推奨アプローチ
 1. **Mary UIデフォルトを尊重**: 可能な限りデフォルト設定を使用
 2. **必要最小限のカスタマイズ**: プロジェクト固有の要件のみ調整
 3. **TailwindCSSクラスでの拡張**: Mary UIコンポーネントにクラス追加
 4. **設定ファイルでのグローバル調整**: config/mary.phpを活用
 
-### 7.2 カスタマイズ例
+### 8.2 カスタマイズ例
 ```blade
 {{-- Mary UIコンポーネントのカスタマイズ --}}
 <x-mary-card class="mobile-card">
@@ -213,31 +258,32 @@ class MenuCard extends Component
 </x-mary-alert>
 ```
 
-## 8. 開発フロー
+## 9. 開発フロー
 
-### 8.1 新規コンポーネント作成時
+### 9.1 新規コンポーネント作成時
 1. **デザイン原則の確認**: カラー、フォント、スペーシング規則に準拠
 2. **Mary UIコンポーネント検索**: 既存コンポーネントで要件を満たせるか確認
 3. **モバイルファースト実装**: スマートフォンでの表示を最初に実装
 4. **レスポンシブ対応**: タブレット、デスクトップでの表示調整
 5. **アクセシビリティ確認**: キーボード操作、スクリーンリーダー対応
 
-### 8.2 品質チェックリスト
+### 9.2 品質チェックリスト
 - [ ] モバイルでの表示が適切
 - [ ] タッチターゲットが44px以上
 - [ ] コントラスト比が適切
 - [ ] Mary UIパターンに準拠
 - [ ] TailwindCSSクラスを適切に使用
 - [ ] 不要なカスタムCSSを使用していない
+- [ ] ブラウザバック無効化が機能している
 
-## 9. 継続的改善
+## 10. 継続的改善
 
-### 9.1 定期レビュー
+### 10.1 定期レビュー
 - **月次**: デザインシステムの使用状況確認
 - **四半期**: ユーザビリティテストの結果反映
 - **年次**: 技術スタックアップデートへの対応
 
-### 9.2 改善プロセス
+### 10.2 改善プロセス
 1. **課題の特定**: 開発者フィードバック、ユーザビリティテスト
 2. **解決策の検討**: 技術制約、デザイン一貫性の考慮
 3. **プロトタイプ作成**: 小規模な実装とテスト

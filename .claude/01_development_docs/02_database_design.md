@@ -85,7 +85,6 @@ CREATE TABLE users (
 CREATE TABLE stores (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     name VARCHAR(255) NOT NULL COMMENT '店舗名',
-    slug VARCHAR(100) NOT NULL UNIQUE COMMENT 'URL用スラッグ',
     description TEXT NULL COMMENT '店舗説明',
     phone VARCHAR(20) NULL COMMENT '電話番号',
     email VARCHAR(255) NULL COMMENT 'メールアドレス',
@@ -97,7 +96,6 @@ CREATE TABLE stores (
     updated_at TIMESTAMP NULL,
     deleted_at TIMESTAMP NULL,
     PRIMARY KEY (id),
-    UNIQUE KEY uk_stores_slug (slug),
     INDEX idx_stores_is_active (is_active)
 ) ENGINE=InnoDB COMMENT='店舗';
 ```
@@ -135,7 +133,7 @@ CREATE TABLE products (
     description TEXT NOT NULL COMMENT '商品説明',
     price DECIMAL(10,2) NOT NULL COMMENT '価格（税抜）',
     tax_in_price DECIMAL(10,2) NOT NULL COMMENT '税込価格',
-    cost DECIMAL(10,2) NOT NULL COMMENT '原価',
+    cost DECIMAL(10,2) NULL COMMENT '原価',
     tax_type ENUM('standard', 'reduced', 'exempt', 'non_taxable') NOT NULL COMMENT '税区分',
     availability_status ENUM('available', 'sold_out', 'not_arrived', 'preparing') NOT NULL DEFAULT 'available' COMMENT '提供状態',
     availability_message VARCHAR(255) NULL COMMENT '提供状態メッセージ',
@@ -162,13 +160,13 @@ CREATE TABLE categories (
     store_id BIGINT UNSIGNED NOT NULL COMMENT '店舗ID',
     name VARCHAR(255) NOT NULL COMMENT 'カテゴリ名',
     translations JSON NULL COMMENT '多言語翻訳（JSON）',
-    sort_no INT NULL COMMENT 'ソート順',
+    sort_order INT NOT NULL DEFAULT 0 COMMENT 'ソート順',
     is_active BOOLEAN NOT NULL DEFAULT TRUE COMMENT 'アクティブフラグ',
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
     PRIMARY KEY (id),
     INDEX idx_categories_store_id (store_id),
-    INDEX idx_categories_sort_no (sort_no),
+    INDEX idx_categories_sort_order (sort_order),
     INDEX idx_categories_is_active (is_active),
     FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB COMMENT='商品カテゴリマスター';
@@ -180,13 +178,13 @@ CREATE TABLE category_product (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     product_id BIGINT UNSIGNED NOT NULL COMMENT '商品ID',
     category_id BIGINT UNSIGNED NOT NULL COMMENT 'カテゴリID',
-    sort_no INT NOT NULL COMMENT 'ソート順',
+    sort_order INT NOT NULL COMMENT 'ソート順',
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
     PRIMARY KEY (id),
     INDEX idx_category_product_product_id (product_id),
     INDEX idx_category_product_category_id (category_id),
-    INDEX idx_category_product_sort_no (sort_no),
+    INDEX idx_category_product_sort_order (sort_order),
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
     FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
 ) ENGINE=InnoDB COMMENT='商品カテゴリ紐付け';
@@ -198,8 +196,7 @@ CREATE TABLE options (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     store_id BIGINT UNSIGNED NOT NULL COMMENT '店舗ID',
     title VARCHAR(45) NOT NULL COMMENT 'オプションタイトル',
-    description VARCHAR(45) NOT NULL COMMENT 'オプション説明',
-    required BOOLEAN NOT NULL COMMENT '必須フラグ',
+    required BOOLEAN NOT NULL DEFAULT FALSE COMMENT '必須フラグ',
     selection_type ENUM('single', 'multiple') NOT NULL DEFAULT 'single' COMMENT '選択タイプ',
     translations JSON NULL COMMENT '多言語翻訳（JSON）',
     created_at TIMESTAMP NULL,
@@ -216,7 +213,7 @@ CREATE TABLE product_to_options (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     product_id BIGINT UNSIGNED NOT NULL COMMENT '商品ID',
     option_id BIGINT UNSIGNED NOT NULL COMMENT 'オプションID',
-    sort_no INT NOT NULL COMMENT 'ソート順',
+    sort_order INT NOT NULL COMMENT 'ソート順',
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
     PRIMARY KEY (id),
@@ -233,8 +230,8 @@ CREATE TABLE option_detail (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     option_id BIGINT UNSIGNED NOT NULL COMMENT 'オプションID',
     product_id BIGINT UNSIGNED NOT NULL COMMENT '商品ID',
-    default BOOLEAN NOT NULL COMMENT 'デフォルトフラグ（画面表示時に選択される）',
-    sort_no INT NOT NULL COMMENT 'ソート順',
+    default_selected BOOLEAN NOT NULL DEFAULT FALSE COMMENT 'デフォルトフラグ（画面表示時に選択される）',
+    sort_order INT NOT NULL COMMENT 'ソート順',
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
     PRIMARY KEY (id),
@@ -267,27 +264,29 @@ CREATE TABLE images (
 ```sql
 CREATE TABLE tax_rates (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    store_id BIGINT UNSIGNED NULL COMMENT '店舗ID（NULL=全店舗共通）',
     tax_type ENUM('standard', 'reduced', 'exempt', 'non_taxable') NOT NULL COMMENT '税区分',
     rate DECIMAL(5,2) NOT NULL COMMENT '税率（%）',
-    start_date DATE NOT NULL COMMENT '適用開始日',
-    end_date DATE NULL COMMENT '適用終了日',
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
     PRIMARY KEY (id),
-    INDEX idx_tax_rates_store_type_date (store_id, tax_type, start_date, end_date),
-    FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE
+    INDEX idx_tax_rates_tax_type (tax_type)
 ) ENGINE=InnoDB COMMENT='税率マスター';
 ```
 
 ### 3.12 orders（注文）
+
+#### 2層認証による注文管理
+本システムでは注文管理において2層の認証・識別を行います：
+1. **席セッション（session_id）**: 同席者間での注文履歴共有
+2. **ゲストセッション（guest_token + device_fingerprint）**: 個人識別・不正アクセス防止
+
 ```sql
 CREATE TABLE orders (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     store_id BIGINT UNSIGNED NOT NULL COMMENT '店舗ID',
-    session_id BIGINT UNSIGNED NULL COMMENT 'セッションID（席注文の場合）',
-    guest_token VARCHAR(255) NULL COMMENT 'ゲストトークン（ゲストセッションの場合）',
-    device_fingerprint VARCHAR(255) NULL COMMENT 'デバイスフィンガープリント（ゲストセッション識別用）',
+    session_id BIGINT UNSIGNED NOT NULL COMMENT 'セッションID（席での注文履歴共有用）',
+    guest_token VARCHAR(255) NOT NULL COMMENT 'ゲストトークン（個人識別・不正防止用）',
+    device_fingerprint VARCHAR(255) NOT NULL COMMENT 'デバイス識別（不正アクセス排除用）',
     order_number VARCHAR(50) NOT NULL UNIQUE COMMENT '注文番号',
     status ENUM('pending', 'confirmed', 'preparing', 'ready', 'completed', 'cancelled') NOT NULL DEFAULT 'pending' COMMENT '注文ステータス',
     total_amount DECIMAL(10,2) NOT NULL COMMENT '合計金額',
@@ -305,13 +304,10 @@ CREATE TABLE orders (
     INDEX idx_orders_status (status),
     INDEX idx_orders_ordered_at (ordered_at),
     INDEX idx_orders_device_fingerprint (device_fingerprint),
+    INDEX idx_orders_session_guest (session_id, guest_token),
     FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE RESTRICT,
-    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE RESTRICT,
-    CONSTRAINT chk_orders_session_type CHECK (
-        (session_id IS NOT NULL AND guest_token IS NULL) OR 
-        (session_id IS NULL AND guest_token IS NOT NULL)
-    )
-) ENGINE=InnoDB COMMENT='注文';
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE RESTRICT
+) ENGINE=InnoDB COMMENT='注文（2層認証による管理）';
 ```
 
 ### 3.13 order_items（注文明細）
@@ -363,22 +359,31 @@ CREATE TABLE order_item_options (
 CREATE TABLE cart_logs (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     guest_token VARCHAR(255) NOT NULL COMMENT 'ゲストトークン',
+    session_id BIGINT UNSIGNED NULL COMMENT 'セッションID（あれば）',
     action ENUM('add', 'remove', 'update', 'clear') NOT NULL COMMENT 'カート操作',
     product_id BIGINT UNSIGNED NOT NULL COMMENT '商品ID',
     quantity INT UNSIGNED NULL COMMENT '数量（削除時はNULL）',
-    options JSON NULL COMMENT 'オプション選択（JSON）',
+    unit_price DECIMAL(10,2) NULL COMMENT '操作時の単価',
+    options JSON NULL COMMENT '選択オプション（シンプルな配列）',
+    cart_total DECIMAL(10,2) NULL COMMENT '操作後のカート合計金額',
+    is_success BOOLEAN NOT NULL DEFAULT TRUE COMMENT '操作成功フラグ',
+    error_code VARCHAR(50) NULL COMMENT 'エラーコード（失敗時のみ）',
+    error_message VARCHAR(255) NULL COMMENT 'エラーメッセージ（失敗時のみ）',
     device_fingerprint VARCHAR(255) NULL COMMENT 'デバイスフィンガープリント',
     ip_address VARCHAR(45) NULL COMMENT 'IPアドレス',
     user_agent TEXT NULL COMMENT 'ユーザーエージェント',
     created_at TIMESTAMP NULL,
     PRIMARY KEY (id),
     INDEX idx_cart_logs_guest_token (guest_token),
+    INDEX idx_cart_logs_session_id (session_id),
     INDEX idx_cart_logs_product_id (product_id),
+    INDEX idx_cart_logs_is_success (is_success),
     INDEX idx_cart_logs_created_at (created_at),
     INDEX idx_cart_logs_action (action),
     INDEX idx_cart_logs_device_fingerprint (device_fingerprint),
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
-) ENGINE=InnoDB COMMENT='カート操作ログ（監査・分析用）';
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT,
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE SET NULL
+) ENGINE=InnoDB COMMENT='カート操作ログ（監査・調査用）';
 ```
 
 ### 3.16 change_logs（変更履歴）
@@ -444,7 +449,7 @@ CREATE INDEX idx_orders_store_status_date ON orders(store_id, status, ordered_at
 CREATE INDEX idx_products_store_status_active ON products(store_id, availability_status, is_active);
 
 -- カテゴリ別商品検索用
-CREATE INDEX idx_category_product_category_sort ON category_product(category_id, sort_no);
+CREATE INDEX idx_category_product_category_sort ON category_product(category_id, sort_order);
 
 -- 変更ログ同期用
 CREATE INDEX idx_change_logs_sync ON change_logs(is_synced, created_at);
@@ -570,27 +575,27 @@ guest_session:{token}
     "token": "guest_abc123def456",
     "device_fingerprint": "browser_chrome_win10_hash123",
     "store_id": "1",
+    "session_id": "123",  # DBのsessionsテーブルID（あれば）
     "created_at": "2024-01-01T12:00:00+09:00",
     "last_access": "2024-01-01T12:30:00+09:00",
-    "cart_items": "[{\"product_id\":1,\"quantity\":2,\"options\":[]}]",
     "language": "ja"
 }
 
-# TTL: 1時間（3600秒）
+# TTL: 30分（1800秒）、アクティビティごとに自動延長
 ```
 
-#### カートデータ
+#### カートデータ（シンプル化）
 ```redis
 # キー形式
 guest_cart:{token}
 
-# データ構造（List）
-[
-    "{\"product_id\":1,\"quantity\":2,\"options\":{\"1\":[5]},\"notes\":\"辛さ控えめ\"}",
-    "{\"product_id\":2,\"quantity\":1,\"options\":{\"2\":[3,4]},\"notes\":null}"
-]
+# データ構造（Hash）
+{
+    "items": "[{\"product_id\":101,\"quantity\":2,\"options\":[{\"option_id\":10,\"product_id\":201}]}]",
+    "updated_at": "2024-01-01T12:30:00+09:00"
+}
 
-# TTL: 1時間（3600秒）
+# TTL: 30分（1800秒）、アクティビティごとに自動延長
 ```
 
 #### デバイス識別情報
@@ -612,16 +617,23 @@ Redis::hmset("guest_session:{$token}", [
     'token' => $token,
     'device_fingerprint' => $fingerprint,
     'store_id' => $storeId,
+    'session_id' => $sessionId,  // あれば
     'created_at' => now()->toISOString(),
     'last_access' => now()->toISOString(),
-    'cart_items' => json_encode([]),
     'language' => 'ja'
 ]);
-Redis::expire("guest_session:{$token}", 3600); // 1時間
+Redis::expire("guest_session:{$token}", 1800); // 30分
 
-// カートアイテム追加
-Redis::lpush("guest_cart:{$token}", json_encode($cartItem));
-Redis::expire("guest_cart:{$token}", 3600);
+// カートデータ保存（シンプル化）
+Redis::hmset("guest_cart:{$token}", [
+    'items' => json_encode($cartItems),
+    'updated_at' => now()->toISOString()
+]);
+Redis::expire("guest_cart:{$token}", 1800); // 30分
+
+// アクティビティ時にTTL延長
+Redis::expire("guest_session:{$token}", 1800);
+Redis::expire("guest_cart:{$token}", 1800);
 
 // デバイス識別情報設定
 Redis::setex("device:{$fingerprint}", 86400, $token); // 24時間

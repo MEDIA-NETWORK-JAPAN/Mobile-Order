@@ -1328,6 +1328,441 @@ $config = $statusConfig[$status] ?? $statusConfig['available'];
 </main>
 ```
 
+## 16. ドラッグ＆ドロップソート実装
+
+### 16.0 SortableJSのセットアップ
+
+#### npm/yarnによるインストール（推奨）
+```bash
+# SortableJSをローカルインストール
+npm install sortablejs
+# または
+yarn add sortablejs
+```
+
+#### Vite設定での読み込み
+```javascript
+// resources/js/app.js
+import Sortable from 'sortablejs';
+window.Sortable = Sortable;
+```
+
+#### 手動配置の場合
+```bash
+# public/js/vendor/ にダウンロード
+mkdir -p public/js/vendor
+wget -O public/js/vendor/sortable.min.js https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js
+```
+
+### 16.1 SortableJSとの統合
+```blade
+{{-- resources/views/livewire/admin/category-manager.blade.php --}}
+<div class="p-6">
+    {{-- カテゴリリスト --}}
+    <x-mary-card title="カテゴリ管理">
+        <div x-data="sortableCategories()" 
+             x-init="initSortable()"
+             wire:ignore.self>
+            
+            <div id="category-list" class="space-y-2">
+                @foreach($categories as $category)
+                    <div data-id="{{ $category->id }}" 
+                         class="sortable-item">
+                        <x-mary-list-item :item="$category">
+                            <x-slot:avatar>
+                                {{-- ドラッグハンドル --}}
+                                <x-mary-icon name="o-bars-3" 
+                                           class="w-5 h-5 text-gray-400 cursor-move handle" />
+                            </x-slot:avatar>
+                            
+                            <x-slot:value>
+                                {{ $category->name }}
+                            </x-slot:value>
+                            
+                            <x-slot:sub-value>
+                                <x-mary-badge value="順番: {{ $category->sort_order }}" 
+                                            class="badge-ghost badge-sm" />
+                            </x-slot:sub-value>
+                            
+                            <x-slot:actions>
+                                <x-mary-button icon="o-pencil" 
+                                             wire:click="edit({{ $category->id }})" 
+                                             class="btn-ghost btn-sm" />
+                            </x-slot:actions>
+                        </x-mary-list-item>
+                    </div>
+                @endforeach
+            </div>
+        </div>
+        
+        {{-- 保存中の表示 --}}
+        <x-mary-loading wire:loading wire:target="updateOrder" class="mt-4">
+            並び順を保存中...
+        </x-mary-loading>
+    </x-mary-card>
+</div>
+
+@push('scripts')
+{{-- SortableJSをローカルに配置（推奨） --}}
+<script src="{{ asset('js/vendor/sortable.min.js') }}"></script>
+<script>
+function sortableCategories() {
+    return {
+        sortable: null,
+        
+        initSortable() {
+            this.sortable = new Sortable(document.getElementById('category-list'), {
+                handle: '.handle',
+                animation: 150,
+                ghostClass: 'opacity-50',
+                chosenClass: 'ring-2 ring-primary',
+                dragClass: 'shadow-2xl rotate-2',
+                
+                // タッチデバイス対応
+                forceFallback: true,
+                fallbackTolerance: 3,
+                touchStartThreshold: 5,
+                delay: 100,
+                delayOnTouchOnly: true,
+                
+                // ドラッグ終了時の処理
+                onEnd: (evt) => {
+                    const orderedIds = Array.from(evt.to.children)
+                        .map(el => parseInt(el.dataset.id));
+                    
+                    // Livewireメソッド呼び出し
+                    @this.updateOrder(orderedIds);
+                }
+            });
+        },
+        
+        destroy() {
+            if (this.sortable) {
+                this.sortable.destroy();
+            }
+        }
+    }
+}
+</script>
+@endpush
+```
+
+### 16.2 Livewireコンポーネント実装
+```php
+// app/Livewire/Admin/CategoryManager.php
+namespace App\Livewire\Admin;
+
+use App\Models\Category;
+use Livewire\Component;
+use Mary\Traits\Toast;
+
+class CategoryManager extends Component
+{
+    use Toast;
+    
+    public $categories;
+    
+    public function mount()
+    {
+        $this->loadCategories();
+    }
+    
+    public function loadCategories()
+    {
+        $this->categories = Category::orderBy('sort_order')
+            ->get();
+    }
+    
+    public function updateOrder($orderedIds)
+    {
+        try {
+            \DB::transaction(function () use ($orderedIds) {
+                foreach ($orderedIds as $index => $id) {
+                    Category::where('id', $id)->update([
+                        'sort_order' => $index + 1
+                    ]);
+                }
+            });
+            
+            $this->success('並び順を更新しました');
+            $this->loadCategories();
+            
+        } catch (\Exception $e) {
+            $this->error('並び順の更新に失敗しました');
+        }
+    }
+    
+    public function render()
+    {
+        return view('livewire.admin.category-manager');
+    }
+}
+```
+
+### 16.3 商品リストのドラッグ＆ドロップ
+```blade
+{{-- 商品一覧でのソート実装 --}}
+<x-mary-table :headers="$headers" :rows="$products" striped>
+    {{-- ソートハンドル列 --}}
+    @scope('cell_sort', $product)
+        <div class="sortable-row" data-id="{{ $product->id }}">
+            <x-mary-icon name="o-bars-3" 
+                       class="w-5 h-5 text-gray-400 cursor-move handle"
+                       x-tooltip="ドラッグして並び替え" />
+        </div>
+    @endscope
+    
+    {{-- 商品名列 --}}
+    @scope('cell_name', $product)
+        <div class="flex items-center gap-2">
+            @if($product->image_url)
+                <x-mary-avatar :image="$product->image_url" class="w-10" />
+            @endif
+            <div>
+                <div class="font-semibold">{{ $product->name }}</div>
+                <div class="text-sm text-gray-500">{{ $product->code }}</div>
+            </div>
+        </div>
+    @endscope
+    
+    {{-- 価格列 --}}
+    @scope('cell_price', $product)
+        <x-mary-badge value="¥{{ number_format($product->price) }}" 
+                    class="badge-outline" />
+    @endscope
+    
+    {{-- アクション列 --}}
+    @scope('actions', $product)
+        <x-mary-dropdown>
+            <x-slot:trigger>
+                <x-mary-button icon="o-ellipsis-vertical" 
+                             class="btn-ghost btn-sm" />
+            </x-slot:trigger>
+            
+            <x-mary-menu-item title="編集" 
+                            icon="o-pencil"
+                            wire:click="edit({{ $product->id }})" />
+            <x-mary-menu-item title="複製" 
+                            icon="o-document-duplicate"
+                            wire:click="duplicate({{ $product->id }})" />
+            <x-mary-menu-item title="削除" 
+                            icon="o-trash"
+                            wire:click="delete({{ $product->id }})"
+                            wire:confirm="本当に削除しますか？" />
+        </x-mary-dropdown>
+    @endscope
+</x-mary-table>
+```
+
+### 16.4 モバイル対応の考慮事項
+```javascript
+// タブレット・スマートフォンでの操作性向上
+initSortable() {
+    // デバイス判定
+    const isTouchDevice = 'ontouchstart' in window;
+    
+    this.sortable = new Sortable(document.getElementById('sortable-list'), {
+        handle: '.handle',
+        animation: 150,
+        
+        // タッチデバイスの設定
+        forceFallback: isTouchDevice,
+        fallbackTolerance: isTouchDevice ? 5 : 0,
+        touchStartThreshold: isTouchDevice ? 10 : 0,
+        
+        // 長押しで開始（誤操作防止）
+        delay: isTouchDevice ? 200 : 0,
+        delayOnTouchOnly: true,
+        
+        // 視覚的フィードバック
+        ghostClass: 'opacity-50',
+        chosenClass: isTouchDevice ? 'scale-105 shadow-xl' : 'ring-2 ring-primary',
+        dragClass: 'rotate-2 shadow-2xl',
+        
+        // スクロール設定
+        scroll: true,
+        scrollSensitivity: 30,
+        scrollSpeed: 10,
+        
+        onEnd: (evt) => {
+            const orderedIds = Array.from(evt.to.children)
+                .map(el => parseInt(el.dataset.id));
+            @this.updateOrder(orderedIds);
+        }
+    });
+}
+```
+
+### 16.5 フォールバック機能（SortableJS無効時）
+
+#### 軽量な代替実装
+```blade
+{{-- SortableJSが読み込めない場合の代替UI --}}
+<div x-data="fallbackSort()" class="space-y-2">
+    @foreach($categories as $category)
+        <div data-id="{{ $category->id }}" class="bg-white p-4 rounded-lg border">
+            <div class="flex items-center justify-between">
+                <span>{{ $category->name }}</span>
+                <div class="flex gap-2">
+                    @if(!$loop->first)
+                        <x-mary-button icon="o-arrow-up" 
+                                     wire:click="moveUp({{ $category->id }})"
+                                     class="btn-ghost btn-sm" />
+                    @endif
+                    @if(!$loop->last)
+                        <x-mary-button icon="o-arrow-down" 
+                                     wire:click="moveDown({{ $category->id }})"
+                                     class="btn-ghost btn-sm" />
+                    @endif
+                </div>
+            </div>
+        </div>
+    @endforeach
+</div>
+
+<script>
+function fallbackSort() {
+    return {
+        // SortableJSの動作確認
+        init() {
+            if (typeof window.Sortable === 'undefined') {
+                console.warn('SortableJS not loaded, using fallback buttons');
+                // フォールバック用のボタンを表示
+                document.querySelectorAll('.sortable-fallback').forEach(el => {
+                    el.style.display = 'block';
+                });
+            }
+        }
+    }
+}
+</script>
+```
+
+#### Livewireコンポーネント側の実装
+```php
+// フォールバック用のメソッド追加
+public function moveUp($itemId)
+{
+    $item = $this->model::find($itemId);
+    $prevItem = $this->model::where('sort_order', '<', $item->sort_order)
+                           ->orderBy('sort_order', 'desc')
+                           ->first();
+    
+    if ($prevItem) {
+        \DB::transaction(function () use ($item, $prevItem) {
+            $tempOrder = $item->sort_order;
+            $item->update(['sort_order' => $prevItem->sort_order]);
+            $prevItem->update(['sort_order' => $tempOrder]);
+        });
+        
+        $this->success('並び順を更新しました');
+        $this->loadItems();
+    }
+}
+
+public function moveDown($itemId)
+{
+    $item = $this->model::find($itemId);
+    $nextItem = $this->model::where('sort_order', '>', $item->sort_order)
+                           ->orderBy('sort_order', 'asc')
+                           ->first();
+    
+    if ($nextItem) {
+        \DB::transaction(function () use ($item, $nextItem) {
+            $tempOrder = $item->sort_order;
+            $item->update(['sort_order' => $nextItem->sort_order]);
+            $nextItem->update(['sort_order' => $tempOrder]);
+        });
+        
+        $this->success('並び順を更新しました');
+        $this->loadItems();
+    }
+}
+```
+
+### 16.6 アクセシビリティ対応
+```blade
+{{-- キーボード操作も可能にする --}}
+<div class="sortable-item"
+     data-id="{{ $item->id }}"
+     tabindex="0"
+     role="listitem"
+     aria-label="{{ $item->name }} - 並び順{{ $item->sort_order }}"
+     @keydown.arrow-up.prevent="moveUp({{ $item->id }})"
+     @keydown.arrow-down.prevent="moveDown({{ $item->id }})"
+     @keydown.space.prevent="toggleSelection({{ $item->id }})">
+    
+    <div class="flex items-center gap-3">
+        {{-- ビジュアルインジケーター --}}
+        <button type="button"
+                class="handle"
+                aria-label="ドラッグして並び替え"
+                title="ドラッグして並び替え（↑↓キーでも移動可能）">
+            <x-mary-icon name="o-bars-3" class="w-5 h-5" />
+        </button>
+        
+        {{-- コンテンツ --}}
+        <div class="flex-1">{{ $item->name }}</div>
+        
+        {{-- 順番表示 --}}
+        <span class="text-sm text-gray-500" aria-label="現在の順番">
+            #{{ $item->sort_order }}
+        </span>
+        
+        {{-- フォールバック用ボタン（非表示） --}}
+        <div class="sortable-fallback hidden flex gap-1">
+            <x-mary-button icon="o-arrow-up" 
+                         wire:click="moveUp({{ $item->id }})"
+                         class="btn-ghost btn-xs"
+                         :disabled="$loop->first" />
+            <x-mary-button icon="o-arrow-down" 
+                         wire:click="moveDown({{ $item->id }})"
+                         class="btn-ghost btn-xs"
+                         :disabled="$loop->last" />
+        </div>
+    </div>
+</div>
+```
+
+### 16.7 パフォーマンス最適化
+```javascript
+// 大量データ対応
+initSortable() {
+    // アイテム数をチェック
+    const itemCount = document.querySelectorAll('.sortable-item').length;
+    
+    this.sortable = new Sortable(document.getElementById('sortable-list'), {
+        handle: '.handle',
+        animation: itemCount > 50 ? 0 : 150, // 大量データ時はアニメーション無効
+        
+        // 仮想スクロール対応（大量データ時）
+        scroll: true,
+        scrollSensitivity: 30,
+        scrollSpeed: itemCount > 100 ? 20 : 10,
+        
+        // Debounce処理
+        onEnd: this.debounce((evt) => {
+            const orderedIds = Array.from(evt.to.children)
+                .map(el => parseInt(el.dataset.id));
+            @this.updateOrder(orderedIds);
+        }, 300)
+    });
+},
+
+// Debounce utility
+debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+```
+
 ---
 
-このMary UIベストプラクティス文書により、効率的で保守性の高いUIコンポーネントを構築できます。Livewireとの密接な統合により、リアクティブで高性能なユーザーインターフェースを実現し、モバイルファーストのアプローチでアクセシブルなアプリケーションを開発できます。
+このMary UIベストプラクティス文書により、効率的で保守性の高いUIコンポーネントを構築できます。Livewireとの密接な統合により、リアクティブで高性能なユーザーインターフェースを実現し、モバイルファーストのアプローチでアクセシブルなアプリケーションを開発できます。ドラッグ＆ドロップによる直感的な操作で、管理画面の使いやすさが大幅に向上します。

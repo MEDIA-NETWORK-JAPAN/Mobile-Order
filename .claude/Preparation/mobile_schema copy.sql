@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS `mydb`.`categories` (
   `name` VARCHAR(255) NOT NULL,
   `created_at` TIMESTAMP NULL,
   `updated_at` TIMESTAMP NULL,
-  `sort_no` INT NULL,
+  `sort_order` INT NOT NULL,
   PRIMARY KEY (`id`));
 
 
@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS `mydb`.`category_product` (
   `id` DECIMAL NOT NULL,
   `product_id` DECIMAL NOT NULL,
   `category_id` DECIMAL NOT NULL,
-  `sort_no` INT NOT NULL,
+  `sort_order` INT NOT NULL,
   `created_at` TIMESTAMP NULL,
   `updated_at` TIMESTAMP NULL,
   PRIMARY KEY (`id`),
@@ -145,7 +145,7 @@ CREATE TABLE IF NOT EXISTS `mydb`.`option_detail` (
   `option_id` DECIMAL NOT NULL,
   `product_id` DECIMAL NOT NULL,
   `default` TINYINT NOT NULL,
-  `sort_no` INT NOT NULL,
+  `sort_order` INT NOT NULL,
   `created_at` TIMESTAMP NULL,
   `updated_at` TIMESTAMP NULL,
   PRIMARY KEY (`id`),
@@ -170,7 +170,7 @@ CREATE TABLE IF NOT EXISTS `mydb`.`product_to_options` (
   `id` DECIMAL NOT NULL,
   `product_id` DECIMAL NOT NULL,
   `option_id` DECIMAL NOT NULL,
-  `sort_no` INT NOT NULL,
+  `sort_order` INT NOT NULL,
   `created_at` TIMESTAMP NULL,
   `updated_at` TIMESTAMP NULL,
   PRIMARY KEY (`id`),

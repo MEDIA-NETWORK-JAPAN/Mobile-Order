@@ -600,6 +600,202 @@ public function loadItems()
 </div>
 ```
 
+## 11. ドラッグ＆ドロップソート機能
+
+### 11.1 対象テーブル
+sort_orderカラムを持つ以下のテーブルで実装：
+- **categories**: カテゴリ一覧
+- **category_product**: カテゴリ内商品
+- **product_to_options**: 商品オプション
+- **option_detail**: オプション選択肢
+- **images**: 商品画像
+
+### 11.2 実装方法（Livewire + Alpine.js）
+
+#### Livewireコンポーネント
+```php
+// app/Livewire/Admin/SortableList.php
+<?php
+
+namespace App\Livewire\Admin;
+
+use Livewire\Component;
+
+class SortableList extends Component
+{
+    public $items = [];
+    public $model;
+    public $parentId = null;
+    
+    public function mount($model, $parentId = null)
+    {
+        $this->model = $model;
+        $this->parentId = $parentId;
+        $this->loadItems();
+    }
+    
+    public function loadItems()
+    {
+        $query = $this->model::query();
+        
+        if ($this->parentId) {
+            $query->where('category_id', $this->parentId);
+        }
+        
+        $this->items = $query->orderBy('sort_order')->get()->toArray();
+    }
+    
+    public function updateOrder($orderedIds)
+    {
+        foreach ($orderedIds as $index => $id) {
+            $this->model::where('id', $id)->update([
+                'sort_order' => $index + 1
+            ]);
+        }
+        
+        $this->dispatch('sorted', message: '並び順を更新しました');
+        $this->loadItems();
+    }
+    
+    public function render()
+    {
+        return view('livewire.admin.sortable-list');
+    }
+}
+```
+
+#### Bladeビュー
+```blade
+{{-- resources/views/livewire/admin/sortable-list.blade.php --}}
+<div x-data="sortableList()" 
+     x-init="initSortable()"
+     wire:ignore.self>
+    
+    <div id="sortable-items" class="space-y-2">
+        @foreach($items as $item)
+            <div data-id="{{ $item['id'] }}" 
+                 class="sortable-item bg-white p-4 rounded-lg border border-gray-200 cursor-move hover:shadow-md transition-shadow">
+                
+                <div class="flex items-center">
+                    {{-- ドラッグハンドル --}}
+                    <svg class="w-6 h-6 text-gray-400 mr-3 handle" fill="none" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                    
+                    {{-- アイテム内容 --}}
+                    <div class="flex-1">
+                        <span class="font-medium">{{ $item['name'] ?? $item['title'] }}</span>
+                        @if(isset($item['code']))
+                            <span class="text-sm text-gray-500 ml-2">({{ $item['code'] }})</span>
+                        @endif
+                    </div>
+                    
+                    {{-- ソート順表示 --}}
+                    <span class="text-sm text-gray-400">
+                        #{{ $item['sort_order'] }}
+                    </span>
+                </div>
+            </div>
+        @endforeach
+    </div>
+    
+    {{-- 保存中インジケーター --}}
+    <div wire:loading wire:target="updateOrder" 
+         class="fixed bottom-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg">
+        並び順を保存中...
+    </div>
+</div>
+
+@push('scripts')
+<script>
+function sortableList() {
+    return {
+        sortable: null,
+        
+        initSortable() {
+            // SortableJSを使用
+            this.sortable = new Sortable(document.getElementById('sortable-items'), {
+                handle: '.handle',
+                animation: 150,
+                ghostClass: 'opacity-50',
+                dragClass: 'shadow-2xl',
+                onEnd: (evt) => {
+                    // 新しい順序を取得
+                    const orderedIds = Array.from(evt.to.children).map(el => 
+                        parseInt(el.dataset.id)
+                    );
+                    
+                    // Livewireに送信
+                    @this.updateOrder(orderedIds);
+                }
+            });
+        }
+    }
+}
+</script>
+@endpush
+```
+
+### 11.3 Mary UIを使った実装
+```blade
+{{-- Mary UIのテーブルコンポーネントと統合 --}}
+<x-mary-table :headers="$headers" :rows="$items" sortable>
+    @scope('cell_sort', $item)
+        <div class="sortable-row flex items-center" data-id="{{ $item->id }}">
+            <x-mary-icon name="o-bars-3" class="w-5 h-5 text-gray-400 cursor-move handle" />
+        </div>
+    @endscope
+    
+    @scope('cell_name', $item)
+        <div class="flex items-center gap-2">
+            <span>{{ $item->name }}</span>
+            <x-mary-badge :value="$item->sort_order" class="badge-sm" />
+        </div>
+    @endscope
+</x-mary-table>
+```
+
+### 11.4 タッチデバイス対応
+```javascript
+// モバイルデバイスでのタッチ操作対応
+initSortable() {
+    this.sortable = new Sortable(document.getElementById('sortable-items'), {
+        handle: '.handle',
+        animation: 150,
+        forceFallback: true, // タッチデバイス対応
+        fallbackTolerance: 3,
+        touchStartThreshold: 5,
+        
+        // 長押しで移動開始（誤操作防止）
+        delay: 100,
+        delayOnTouchOnly: true,
+        
+        onEnd: (evt) => {
+            const orderedIds = Array.from(evt.to.children).map(el => 
+                parseInt(el.dataset.id)
+            );
+            @this.updateOrder(orderedIds);
+        }
+    });
+}
+```
+
+### 11.5 UX改善ポイント
+1. **視覚的フィードバック**
+   - ドラッグ中は影を追加
+   - ドロップ可能エリアをハイライト
+   - 保存中は明確に表示
+
+2. **操作性**
+   - ドラッグハンドルで誤操作防止
+   - キーボード操作も可能（アクセシビリティ）
+   - 変更の自動保存
+
+3. **パフォーマンス**
+   - Debounce処理で連続操作を最適化
+   - wire:ignore.selfで再レンダリング防止
+
 ---
 
 このUIコンポーネント設計書に従うことで、Livewire + Mary UI + TailwindCSSを活用した一貫性のあるユーザーインターフェースを構築できます。
