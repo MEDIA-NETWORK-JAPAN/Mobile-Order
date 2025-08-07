@@ -15,7 +15,7 @@
 ### 1.3 認証方式
 - **席セッション**: QRコード読み取り後のトークン認証
 - **ゲストセッション**: 自動生成トークン + デバイスフィンガープリント
-- **POS API**: Bearer Token + IP制限（Laravel Sanctum）
+- **POS API**: Bearer Token認証（Laravel Sanctum）
 - **管理画面**: Session認証（Laravel Breeze）
 
 ## 2. API命名規則
@@ -282,7 +282,9 @@ GET    /api/v1/pos/orders            # 注文一覧取得
 PUT    /api/v1/pos/orders/{id}      # 注文ステータス更新
 PUT    /api/v1/pos/products/{id}    # 商品提供状態更新
 POST   /api/v1/pos/sessions/extend   # 席セッション延長
+POST   /api/v1/pos/auth/login        # POSログイン認証
 POST   /api/v1/pos/auth/refresh      # POSトークン更新
+POST   /api/v1/pos/translations/sync # 多言語翻訳同期
 ```
 
 ### 6.5 管理API
@@ -783,9 +785,135 @@ POST /api/v1/notifications/subscribe        # 通知購読
 POST /api/v1/notifications/push             # プッシュ送信
 ```
 
-## 11. POSトークン自動更新
+## 11. POS翻訳サービス
 
-### 11.1 トークン更新API
+### 11.1 翻訳同期API
+```http
+POST /api/v1/pos/translations/sync
+Authorization: Bearer {pos_token}
+```
+
+**リクエスト**
+```json
+{
+  "translations": {
+    "products": [1, 3, 5],           // 商品ID配列
+    "categories": [1, 2],            // カテゴリID配列  
+    "options": [1, 2, 3]             // オプションID配列
+  },
+  "target_languages": ["en", "zh-TW", "zh-CN", "ko"],
+  "force_update": false,             // 既存翻訳の上書き
+  "timeout": 300                     // タイムアウト（秒）
+}
+```
+
+**レスポンス（成功）**
+```json
+{
+  "success": true,
+  "message": "翻訳完了",
+  "processing_time": "127.3s",
+  "results": {
+    "products": [
+      {
+        "id": 1,
+        "translations": {
+          "en": {"name": "Ramen", "description": "Delicious noodle soup"},
+          "zh-TW": {"name": "拉麵", "description": "美味湯麵"},
+          "zh-CN": {"name": "拉面", "description": "美味汤面"},
+          "ko": {"name": "라멘", "description": "맛있는 국수"}
+        }
+      }
+    ],
+    "categories": [
+      {
+        "id": 1,
+        "translations": {
+          "en": {"name": "Main Dishes"},
+          "zh-TW": {"name": "主食"},
+          "zh-CN": {"name": "主食"},
+          "ko": {"name": "메인 요리"}
+        }
+      }
+    ],
+    "options": [
+      {
+        "id": 1,
+        "translations": {
+          "en": {"title": "Noodle Firmness"},
+          "zh-TW": {"title": "麵條硬度"},
+          "zh-CN": {"title": "面条硬度"},
+          "ko": {"title": "면 굵기"}
+        }
+      }
+    ]
+  }
+}
+```
+
+**レスポンス（エラー時フォールバック）**
+```json
+{
+  "success": false,
+  "message": "翻訳サービスエラー。既存翻訳を使用します",
+  "error": "TRANSLATION_SERVICE_TIMEOUT",
+  "fallback_results": {
+    "products": [
+      {
+        "id": 1,
+        "existing_translations": {
+          "en": {"name": "Ramen", "description": "..."}
+        }
+      }
+    ]
+  }
+}
+```
+
+### 11.2 翻訳システム仕様
+- **外部サービス**: Dify経由で4言語並列翻訳
+- **タイムアウト**: 3-5分（商品数に応じて調整）
+- **制限**: 最大10商品/リクエスト
+- **処理方式**: 全成功 or 全失敗（部分成功なし）
+- **フォールバック**: エラー時は既存翻訳データ返却
+
+### 11.3 翻訳対象フィールド
+- **商品（products）**: name（商品名）、description（商品説明）
+- **カテゴリ（categories）**: name（カテゴリ名）
+- **オプション（options）**: title（オプションタイトル）
+
+## 12. POS認証システム
+
+### 12.1 POSログイン認証API
+```http
+POST /api/v1/pos/auth/login
+Content-Type: application/json
+```
+
+**リクエスト**
+```json
+{
+  "store_id": "store_001",
+  "pos_id": "pos_terminal_001",
+  "password": "secure_pos_password"
+}
+```
+
+**レスポンス（成功）**
+```json
+{
+  "success": true,
+  "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+  "expires_at": "2024-01-02T12:00:00+09:00",
+  "refresh_before": "2024-01-02T06:00:00+09:00",
+  "store_info": {
+    "store_id": "store_001",
+    "store_name": "サンプル店舗"
+  }
+}
+```
+
+### 12.2 トークン更新API
 ```http
 POST /api/v1/pos/auth/refresh
 Authorization: Bearer {current_token}
@@ -800,13 +928,21 @@ Authorization: Bearer {current_token}
 }
 ```
 
-### 11.2 自動更新推奨実装
+### 12.3 POS認証フロー
+1. **起動時ログイン**: POS起動時に自動的にログインAPI実行
+2. **トークン保存**: 取得したトークンをPOS内部で自動保存
+3. **API利用**: Bearer Token でPOS API呼び出し
+4. **自動更新**: `refresh_before`時刻以降に自動リフレッシュ
+5. **障害回復**: 認証エラー時は自動的に再ログイン
+
+### 12.4 自動更新推奨実装
 - トークンの有効期限：24時間
 - 更新推奨タイミング：期限の6時間前（`refresh_before`）
 - POSシステムは`refresh_before`の時刻以降に自動的にトークンを更新
 - 更新失敗時は5分間隔でリトライ（最大5回）
+- 認証エラー時は自動的に再ログイン実行
 
-### 11.3 セッション延長API（POSからの明示的指示）
+### 12.5 セッション延長API（POSからの明示的指示）
 ```http
 POST /api/v1/pos/sessions/extend
 Authorization: Bearer {pos_token}

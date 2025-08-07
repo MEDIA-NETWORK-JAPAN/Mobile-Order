@@ -512,9 +512,37 @@ CHECK (availability_status IN ('available', 'sold_out', 'not_arrived', 'preparin
 ```
 
 ### 7.2 翻訳対象フィールド
-- `categories.translations`: カテゴリ名
-- `products.translations`: 商品名、説明
-- `options.translations`: オプション名、説明
+- `categories.translations`: カテゴリ名（name）
+- `products.translations`: 商品名（name）、商品説明（description）
+- `options.translations`: オプションタイトル（title）
+
+### 7.3 翻訳JSON構造例
+```json
+{
+  "en": {
+    "name": "Ramen",
+    "description": "Delicious noodle soup with rich broth"
+  },
+  "zh-TW": {
+    "name": "拉麵",
+    "description": "美味的湯麵配濃郁湯頭"
+  },
+  "zh-CN": {
+    "name": "拉面",
+    "description": "美味的汤面配浓郁汤头"
+  },
+  "ko": {
+    "name": "라멘",
+    "description": "진한 국물의 맛있는 국수"
+  }
+}
+```
+
+### 7.4 翻訳システム連携
+- **外部サービス**: Dify経由で多言語翻訳
+- **更新方式**: POS翻訳API経由でリアルタイム同期
+- **処理方式**: 全成功 or 全失敗（フォールバック付き）
+- **対応言語**: 英語、中国語繁体字、中国語簡体字、韓国語
 
 ## 8. セキュリティ考慮事項
 
