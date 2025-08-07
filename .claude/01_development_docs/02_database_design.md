@@ -47,7 +47,10 @@
 - `order_items` - 注文明細
 - `order_item_options` - 注文商品のオプション選択
 
-### 2.5 システム管理
+### 2.5 カート管理
+- `cart_logs` - カート操作ログ（監査・分析用）
+
+### 2.6 システム管理
 - `change_logs` - データ変更履歴（POS連携用）
 - `system_settings` - システム設定
 - `failed_jobs` - 失敗したジョブ
@@ -355,7 +358,30 @@ CREATE TABLE order_item_options (
 ) ENGINE=InnoDB COMMENT='注文商品オプション';
 ```
 
-### 3.15 change_logs（変更履歴）
+### 3.15 cart_logs（カート操作ログ）
+```sql
+CREATE TABLE cart_logs (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    guest_token VARCHAR(255) NOT NULL COMMENT 'ゲストトークン',
+    action ENUM('add', 'remove', 'update', 'clear') NOT NULL COMMENT 'カート操作',
+    product_id BIGINT UNSIGNED NOT NULL COMMENT '商品ID',
+    quantity INT UNSIGNED NULL COMMENT '数量（削除時はNULL）',
+    options JSON NULL COMMENT 'オプション選択（JSON）',
+    device_fingerprint VARCHAR(255) NULL COMMENT 'デバイスフィンガープリント',
+    ip_address VARCHAR(45) NULL COMMENT 'IPアドレス',
+    user_agent TEXT NULL COMMENT 'ユーザーエージェント',
+    created_at TIMESTAMP NULL,
+    PRIMARY KEY (id),
+    INDEX idx_cart_logs_guest_token (guest_token),
+    INDEX idx_cart_logs_product_id (product_id),
+    INDEX idx_cart_logs_created_at (created_at),
+    INDEX idx_cart_logs_action (action),
+    INDEX idx_cart_logs_device_fingerprint (device_fingerprint),
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
+) ENGINE=InnoDB COMMENT='カート操作ログ（監査・分析用）';
+```
+
+### 3.16 change_logs（変更履歴）
 ```sql
 CREATE TABLE change_logs (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -381,7 +407,7 @@ CREATE TABLE change_logs (
 ) ENGINE=InnoDB COMMENT='変更履歴（POS連携用）';
 ```
 
-### 3.16 system_settings（システム設定）
+### 3.17 system_settings（システム設定）
 ```sql
 CREATE TABLE system_settings (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -407,6 +433,7 @@ CREATE TABLE system_settings (
 - **カテゴリ検索**: store_id, is_active
 - **注文検索**: store_id, session_id, status, ordered_at
 - **セッション検索**: qr_code, store_id, status, expires_at
+- **カートログ検索**: guest_token, product_id, action, created_at
 
 ### 4.2 複合インデックス
 ```sql
@@ -421,6 +448,10 @@ CREATE INDEX idx_category_product_category_sort ON category_product(category_id,
 
 -- 変更ログ同期用
 CREATE INDEX idx_change_logs_sync ON change_logs(is_synced, created_at);
+
+-- カートログ分析用
+CREATE INDEX idx_cart_logs_token_date ON cart_logs(guest_token, created_at);
+CREATE INDEX idx_cart_logs_product_action_date ON cart_logs(product_id, action, created_at);
 ```
 
 ## 5. パフォーマンス考慮事項
@@ -438,6 +469,7 @@ ALTER TABLE change_logs PARTITION BY RANGE (YEAR(created_at)*100 + MONTH(created
 
 ### 5.2 アーカイブ戦略
 - **change_logs**: 6ヶ月経過後にアーカイブテーブルに移動
+- **cart_logs**: 3ヶ月経過後にアーカイブテーブルに移動（分析データとして保持）
 - **images**: 商品削除時に連動して整理
 - **orders**: 1年経過後にアーカイブテーブルに移動
 - **sessions**: 期限切れ後1週間でクリーンアップ
@@ -451,9 +483,9 @@ ALTER TABLE change_logs PARTITION BY RANGE (YEAR(created_at)*100 + MONTH(created
 
 ### 6.2 CHECK制約
 ```sql
--- 価格は0以上
-ALTER TABLE products ADD CONSTRAINT chk_products_price CHECK (price >= 0);
-ALTER TABLE products ADD CONSTRAINT chk_products_tax_in_price CHECK (tax_in_price >= 0);
+-- 価格の妥当性チェック（マイナス値許可、極端な値のみ制限）
+ALTER TABLE products ADD CONSTRAINT chk_products_price CHECK (price >= -999999.99 AND price <= 999999.99);
+ALTER TABLE products ADD CONSTRAINT chk_products_tax_in_price CHECK (tax_in_price >= -999999.99 AND tax_in_price <= 999999.99);
 
 -- 数量は1以上
 ALTER TABLE order_items ADD CONSTRAINT chk_order_items_quantity CHECK (quantity >= 1);
@@ -516,7 +548,7 @@ guest_session:{token}
     "language": "ja"
 }
 
-# TTL: 30分（1800秒）
+# TTL: 1時間（3600秒）
 ```
 
 #### カートデータ
@@ -530,7 +562,7 @@ guest_cart:{token}
     "{\"product_id\":2,\"quantity\":1,\"options\":{\"2\":[3,4]},\"notes\":null}"
 ]
 
-# TTL: 30分（1800秒）
+# TTL: 1時間（3600秒）
 ```
 
 #### デバイス識別情報
@@ -557,11 +589,11 @@ Redis::hmset("guest_session:{$token}", [
     'cart_items' => json_encode([]),
     'language' => 'ja'
 ]);
-Redis::expire("guest_session:{$token}", 1800); // 30分
+Redis::expire("guest_session:{$token}", 3600); // 1時間
 
 // カートアイテム追加
 Redis::lpush("guest_cart:{$token}", json_encode($cartItem));
-Redis::expire("guest_cart:{$token}", 1800);
+Redis::expire("guest_cart:{$token}", 3600);
 
 // デバイス識別情報設定
 Redis::setex("device:{$fingerprint}", 86400, $token); // 24時間

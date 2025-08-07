@@ -32,7 +32,7 @@ enum UserRole: string
 - パスワードリセット
 - メール認証
 - Remember Me機能
-- セッション管理
+- セッション管理（アクティビティベース自動延長）
 
 ### 2.3 セキュリティ設定
 ```php
@@ -52,7 +52,7 @@ enum UserRole: string
 ],
 
 // config/session.php
-'lifetime' => 120, // 2時間
+'lifetime' => 120, // 2時間（アクティビティで自動延長）
 'expire_on_close' => false,
 'encrypt' => true,
 'http_only' => true,
@@ -61,6 +61,14 @@ enum UserRole: string
 
 ### 2.4 ミドルウェア構成
 ```php
+// Kernel.php でのミドルウェア登録
+protected $middlewareGroups = [
+    'web' => [
+        // ... 他のミドルウェア
+        \App\Http\Middleware\ExtendSessionOnActivity::class,
+    ],
+];
+
 // 管理者認証
 class AdminMiddleware
 {
@@ -90,6 +98,31 @@ class SuperAdminMiddleware
         return $next($request);
     }
 }
+
+// セッションアクティビティ延長
+class ExtendSessionOnActivity
+{
+    public function handle($request, Closure $next)
+    {
+        if ($request->hasSession() && $request->user()) {
+            // 最後のアクティビティから2時間でタイムアウト
+            $lastActivity = session('last_activity', now()->timestamp);
+            $timeout = config('session.lifetime') * 60; // 分を秒に変換
+            
+            if (now()->timestamp - $lastActivity > $timeout) {
+                auth()->logout();
+                $request->session()->invalidate();
+                return redirect()->route('login')
+                    ->with('error', 'セッションがタイムアウトしました');
+            }
+            
+            // アクティビティ時刻を更新
+            session(['last_activity' => now()->timestamp]);
+        }
+        
+        return $next($request);
+    }
+}
 ```
 
 ## 3. Laravel Sanctum（モバイルAPI）
@@ -108,7 +141,7 @@ class SuperAdminMiddleware
 ### 3.3 トークン設定
 ```php
 // config/sanctum.php
-'expiration' => 60 * 24 * 30, // 30日間
+'expiration' => 60, // 1時間（最終操作から）
 'token_prefix' => env('SANCTUM_TOKEN_PREFIX', ''),
 
 'middleware' => [
@@ -187,7 +220,7 @@ class User extends Authenticatable
 - **POS_SYSTEM**: POSシステム
 
 ### 4.2 認証方式
-- **永続トークン**: 有効期限なし
+- **トークン有効期限**: 24時間（自動更新機能付き）
 - **IPアドレス制限**: 店舗固有IP許可リスト
 - **API能力制限**: スコープベース権限管理
 
@@ -396,10 +429,11 @@ class SessionController extends Controller
             return response()->json(['error' => '無効または期限切れのQRコードです'], 400);
         }
         
-        // セッション開始
+        // セッション開始（初期有効期限3時間）
         $session->update([
             'customer_count' => $customerCount,
             'started_at' => now(),
+            'expires_at' => now()->addHours(3), // 初期値3時間
         ]);
         
         // 認証トークン発行
@@ -416,15 +450,23 @@ class SessionController extends Controller
     
     public function extend(Request $request)
     {
-        $session = $request->user()->currentSession();
+        // POSからの明示的な延長指示のみ受け付ける
+        $this->authorize('pos:session:extend');
         
-        if ($session && $session->expires_at < now()->addHour()) {
-            $session->update([
-                'expires_at' => now()->addHours(3), // デフォルト3時間延長
-            ]);
-        }
+        $sessionId = $request->input('session_id');
+        $hours = $request->input('hours', 1); // デフォルト1時間延長
         
-        return response()->json(['expires_at' => $session->expires_at]);
+        $session = Session::findOrFail($sessionId);
+        
+        $session->update([
+            'expires_at' => now()->addHours($hours),
+        ]);
+        
+        return response()->json([
+            'session_id' => $session->id,
+            'expires_at' => $session->expires_at,
+            'extended_hours' => $hours
+        ]);
     }
 }
 ```
@@ -556,6 +598,34 @@ class AuthenticationTest extends TestCase
         
         $response->assertOk()
             ->assertJsonStructure(['token', 'session_id', 'expires_at']);
+    }
+    
+    /** @test */
+    public function admin_session_extends_on_activity()
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+        
+        // 初回アクセス
+        $this->get('/admin/dashboard')
+            ->assertOk();
+            
+        // セッションに最終アクティビティが記録される
+        $this->assertEquals(now()->timestamp, session('last_activity'));
+        
+        // 1時間後のアクセス（セッション延長される）
+        $this->travel(1)->hours();
+        $this->get('/admin/products')
+            ->assertOk();
+            
+        // 最終アクティビティが更新される
+        $this->assertEquals(now()->timestamp, session('last_activity'));
+        
+        // さらに2時間後のアクセス（タイムアウト）
+        $this->travel(2)->hours();
+        $this->get('/admin/products')
+            ->assertRedirect('/login')
+            ->assertSessionHas('error', 'セッションがタイムアウトしました');
     }
     
     /** @test */

@@ -281,6 +281,8 @@ POST   /api/v1/pos/changes/sync     # 同期完了通知
 GET    /api/v1/pos/orders            # 注文一覧取得
 PUT    /api/v1/pos/orders/{id}      # 注文ステータス更新
 PUT    /api/v1/pos/products/{id}    # 商品提供状態更新
+POST   /api/v1/pos/sessions/extend   # 席セッション延長
+POST   /api/v1/pos/auth/refresh      # POSトークン更新
 ```
 
 ### 6.5 管理API
@@ -751,6 +753,79 @@ Authorization: Bearer guest_abc123def456ghi789
     "code": "DEVICE_MISMATCH",
     "message": "別のデバイスからアクセスされています"
   }
+}
+```
+
+## 10. 将来拡張API
+
+### 10.1 カートログ分析（将来機能）
+```
+# 管理画面用 - カート分析
+GET /api/v1/admin/cart-analytics/overview    # カート放棄率等の概要
+GET /api/v1/admin/cart-analytics/products    # 商品別カート統計
+GET /api/v1/admin/cart-analytics/trends      # 時系列トレンド
+GET /api/v1/admin/cart-analytics/funnels     # コンバージョンファネル
+
+# トラブルシューティング用
+GET /api/v1/admin/cart-logs                  # カートログ検索
+GET /api/v1/admin/cart-logs/{guest_token}    # 特定ゲストの操作履歴
+```
+
+### 10.2 レコメンデーション機能
+```
+GET /api/v1/recommendations/products        # おすすめ商品
+POST /api/v1/analytics/events               # 行動ログ送信
+```
+
+### 10.3 プッシュ通知
+```
+POST /api/v1/notifications/subscribe        # 通知購読
+POST /api/v1/notifications/push             # プッシュ送信
+```
+
+## 11. POSトークン自動更新
+
+### 11.1 トークン更新API
+```http
+POST /api/v1/pos/auth/refresh
+Authorization: Bearer {current_token}
+```
+
+**レスポンス**
+```json
+{
+  "token": "new_token_string",
+  "expires_at": "2024-01-02T12:00:00+09:00",
+  "refresh_before": "2024-01-02T06:00:00+09:00"
+}
+```
+
+### 11.2 自動更新推奨実装
+- トークンの有効期限：24時間
+- 更新推奨タイミング：期限の6時間前（`refresh_before`）
+- POSシステムは`refresh_before`の時刻以降に自動的にトークンを更新
+- 更新失敗時は5分間隔でリトライ（最大5回）
+
+### 11.3 セッション延長API（POSからの明示的指示）
+```http
+POST /api/v1/pos/sessions/extend
+Authorization: Bearer {pos_token}
+```
+
+**リクエスト**
+```json
+{
+  "session_id": 123,
+  "hours": 1  // デフォルト1時間延長
+}
+```
+
+**レスポンス**
+```json
+{
+  "session_id": 123,
+  "expires_at": "2024-01-01T16:00:00+09:00",
+  "extended_hours": 1
 }
 ```
 
