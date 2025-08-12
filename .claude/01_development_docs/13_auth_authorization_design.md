@@ -42,7 +42,7 @@
 【重要な設計原則】
 1. 全ての席セッションIDはPOS端末で生成
 2. WebサーバーはセッションIDを受け取りのみ
-3. 障害時はcloud_synced='N'フラグで管理
+3. 障害時はcloud_synced=FALSEフラグで管理
 4. 復旧時は自動同期でデータ整合性保証
 ```
 
@@ -172,8 +172,8 @@ class ExtendSessionOnActivity
 
 #### スマートフォン認証フロー
 ```
-1. 店舗アクセス → ゲストトークン自動生成
-2. QRコード読み取り → 席情報との紐付け（任意）
+1. QRコード読み取り → 席セッション取得
+2. 席セッション取得後 → ゲストトークン自動生成
 3. デバイス識別 → device_fingerprint設定
 4. APIアクセス時にゲストトークンを使用（Bearer形式）
 ```
@@ -239,7 +239,7 @@ class GuestSessionController extends Controller
     {
         $storeId = $request->input('store_id');
         $deviceFingerprint = $request->header('X-Device-Fingerprint');
-        $sessionId = $request->input('session_id'); // QRコード経由の場合
+        $sessionId = $request->input('session_id'); // 必須（QRコード経由）
         
         // ゲストトークン生成
         $guestToken = 'guest_' . Str::random(32);
@@ -269,21 +269,8 @@ class GuestSessionController extends Controller
         ]);
     }
     
-    public function extendSession(Request $request)
-    {
-        $guestToken = $request->bearerToken();
-        
-        // TTL延長（アクティビティ時）
-        if (Redis::exists("guest_session:{$guestToken}")) {
-            Redis::expire("guest_session:{$guestToken}", 1800);
-            Redis::expire("guest_cart:{$guestToken}", 1800);
-            Redis::hset("guest_session:{$guestToken}", 'last_access', now()->toISOString());
-            
-            return response()->json(['extended' => true]);
-        }
-        
-        return response()->json(['error' => 'Session not found'], 404);
-    }
+    // ゲストセッション自動延長はミドルウェアで実装
+    // 各API呼び出し時に自動的にTTLを30分に延長
 }
 ```
 
@@ -359,10 +346,12 @@ class Permission
         
         'admin' => [
             'store.manage',       // 店舗設定管理
-            'menu.*',            // メニュー管理
+            'menu.view',         // メニュー閲覧（読み取り専用）
             'orders.*',          // 注文管理
             'staff.manage',      // スタッフ管理
             'reports.store',     // 店舗レポート
+            'users.manage',      // ユーザー管理
+            'settings.manage',   // Web設定管理
         ],
         
         'staff' => [
@@ -375,13 +364,18 @@ class Permission
         'guest' => [
             'menu.view',         // メニュー閲覧
             'orders.create',     // 注文作成
-            'orders.own',        // 自分の注文管理
+            'orders.view',       // 自分の注文閲覧のみ（キャンセル不可）
         ],
         
         'pos_system' => [
             'api.polling',       // ポーリングAPI
             'api.orders',        // 注文API
+            'api.orders.cancel', // 注文キャンセルAPI（ハンディ端末経由のみ）
             'api.menu_sync',     // メニュー同期API
+            'api.products.*',    // 商品マスター管理（CRUD）
+            'api.categories.*',  // カテゴリマスター管理（CRUD）
+            'api.options.*',     // オプションマスター管理（CRUD）
+            'api.translations.sync', // 翻訳同期API
         ],
     ];
 }
@@ -424,6 +418,14 @@ class OrderPolicy
     public function update(User $user, Order $order): bool
     {
         return in_array($user->role, ['super_admin', 'admin', 'staff']) &&
+               $user->store_id === $order->store_id;
+    }
+    
+    public function cancel(User $user, Order $order): bool
+    {
+        // キャンセルはPOSシステム（ハンディ端末経由）のみ許可
+        return $user->role === 'pos_system' && 
+               $user->tokenCan('api.orders.cancel') &&
                $user->store_id === $order->store_id;
     }
 }
@@ -558,9 +560,9 @@ class CleanupExpiredSessions extends Command
             ->where('status', 'active')
             ->update(['status' => 'expired']);
             
-        // 期限切れから1週間経過した一時ユーザー削除
+        // 期限切れから1日経過した一時ユーザー削除
         User::where('is_temporary', true)
-            ->where('created_at', '<', now()->subWeek())
+            ->where('created_at', '<', now()->subDay())
             ->whereHas('sessions', function($query) {
                 $query->where('status', 'expired');
             })
@@ -575,14 +577,19 @@ class CleanupExpiredSessions extends Command
 ```
 1. お客様: QRコード読み取り
    ↓
-2. アプリ: POST /api/v1/auth/session
+2. アプリ: POST /api/v1/auth/session/start
    Body: { "qr_code": "ABC123", "customer_count": 2 }
    ↓
-3. サーバー: セッション検証 → 一時ユーザー作成 → トークン発行
+3. サーバー: 席セッション検証・取得
    ↓
-4. レスポンス: { "token": "xxx", "session_id": 1, "expires_at": "2024-01-01 15:00:00" }
+4. アプリ: POST /api/v1/auth/guest/start (席セッション取得後に自動実行)
+   Body: { "session_id": 123, "device_fingerprint": "xxx", "store_id": 1 }
    ↓
-5. 以降のAPI呼び出し: Authorization: Bearer xxx
+5. サーバー: ゲストトークン生成・Redis保存
+   ↓
+6. レスポンス: { "guest_token": "guest_xxx", "expires_in": 1800 }
+   ↓
+7. 以降のAPI呼び出し: Authorization: Bearer guest_xxx
 ```
 
 ### 8.2 POS認証フロー

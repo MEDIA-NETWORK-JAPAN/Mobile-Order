@@ -1275,7 +1275,7 @@ use Illuminate\Console\Command;
 
 class CleanupChangeLogs extends Command
 {
-    protected $signature = 'changelogs:cleanup {--days=30}';
+    protected $signature = 'changelogs:cleanup {--days=30}'; // 注：現在は30日→1ヶ月(30日)に変更
     protected $description = 'Clean up old synced change logs';
     
     public function handle()

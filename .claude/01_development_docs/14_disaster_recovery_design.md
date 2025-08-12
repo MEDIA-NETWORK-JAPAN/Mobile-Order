@@ -23,10 +23,10 @@
 【統一原則】
 - 全ての席セッションIDはPOS端末で生成
 - WebサーバーはセッションIDを受け取りURL発行
-- 障害復旧は cloud_synced='N' フラグで判断
+- 障害復旧は cloud_synced=FALSE フラグで判断
 
 平常時: POS(セッションID生成) → Web(URL発行) → スマホ注文
-障害時: POS単独運用（ハンディ注文継続、cloud_synced='N'）
+障害時: POS単独運用（ハンディ注文継続、cloud_synced=FALSE）
 復旧時: POS → Web（未同期データのシンプル同期）
 ```
 
@@ -39,7 +39,7 @@
 3. Web: セッションDB登録 → URL生成
 4. POS: QRコード印刷
 5. お客様: スマホで注文 → Web → POS
-6. POS: FireBird記録(cloud_synced='Y')
+6. POS: FireBird記録(cloud_synced=TRUE)
 7. 厨房印字・調理・提供・会計
 ```
 
@@ -48,7 +48,7 @@
 1. ハンディ → POS: 注文データ受信
 2. POS: セッションID生成(SESSION_POS_xxx)
 3. POS → Web: 注文データ同期
-4. POS: FireBird記録(cloud_synced='Y')
+4. POS: FireBird記録(cloud_synced=TRUE)
 5. 厨房印字・調理・提供・会計
 ```
 
@@ -72,7 +72,7 @@
 #### 障害中の記録
 ```
 - セッションID: POS生成継続
-- 注文データ: FireBird記録(cloud_synced='N')
+- 注文データ: FireBird記録(cloud_synced=FALSE)
 - 営業: ハンディのみで継続
 - 顧客対応: スタッフが代行注文
 ```
@@ -91,7 +91,7 @@
 ```sql
 -- 注文管理テーブルの同期フラグ
 order_management テーブル:
-  cloud_synced CHAR(1) DEFAULT 'Y'
+  cloud_synced BOOLEAN DEFAULT TRUE
   -- 'Y' = 同期済み（通常時）
   -- 'N' = 未同期（障害時）
   
@@ -111,7 +111,7 @@ ON order_management (cloud_synced);
 処理:
 1. 障害検知 → オフラインモード切替
 2. URL発行機能無効化
-3. 注文記録時 cloud_synced='N' 設定
+3. 注文記録時 cloud_synced=FALSE 設定
 4. 画面表示「オフラインモード」
 ```
 
@@ -130,13 +130,13 @@ ON order_management (cloud_synced);
 ```
 スマホ注文:
 1. Web → POS: 注文データ受信
-2. FireBird記録: cloud_synced='Y'
+2. FireBird記録: cloud_synced=TRUE
 3. 厨房印字
 
 ハンディ注文:
 1. ハンディ → POS: 注文データ
 2. POS → Web: 同期送信
-3. 成功時: cloud_synced='Y'
+3. 成功時: cloud_synced=TRUE
 4. 厨房印字
 ```
 
@@ -144,7 +144,7 @@ ON order_management (cloud_synced);
 ```
 ハンディ注文のみ:
 1. ハンディ → POS: 注文データ
-2. FireBird記録: cloud_synced='N'
+2. FireBird記録: cloud_synced=FALSE
 3. Web同期スキップ
 4. 厨房印字（通常通り）
 ```
@@ -155,7 +155,7 @@ ON order_management (cloud_synced);
 ```
 【Phase 1: 未同期セッション送信】
 POS → Web
-- cloud_synced='N' のセッションIDリスト送信
+- cloud_synced=FALSE のセッションIDリスト送信
 
 【Phase 2: セッション差分処理】
 Web側で自動処理
@@ -165,10 +165,10 @@ Web側で自動処理
 
 【Phase 3: 注文データ同期】
 POS → Web
-- cloud_synced='N' の全注文データ送信
+- cloud_synced=FALSE の全注文データ送信
 
 【Phase 4: 同期完了】
-- cloud_synced='Y' 更新
+- cloud_synced=TRUE 更新
 - 通常運用再開
 ```
 
@@ -198,7 +198,7 @@ POST /api/pos/sync-orders
   ]
 }
 ```
-→ 成功時にcloud_synced='Y'更新
+→ 成功時にcloud_synced=TRUE更新
 
 #### 3. URL発行
 POST /api/pos/request-url
@@ -223,7 +223,7 @@ POST /api/pos/request-url
 
 #### データの一貫性
 ```
-- cloud_synced='N' が唯一の判断基準
+- cloud_synced=FALSE が唯一の判断基準
 - セッションIDは必ずPOS生成
 - Webは受け取りのみ
 - 全データが最終的に同期される
@@ -239,7 +239,7 @@ POST /api/pos/request-url
       スタッフ: ハンディのみで対応
       ↓
 12:00-14:30 障害中
-      ハンディ注文: 25件(cloud_synced='N')
+      ハンディ注文: 25件(cloud_synced=FALSE)
       営業継続: 通常通り
       ↓
 14:30 復旧開始
@@ -314,11 +314,11 @@ POST /api/pos/request-url
 ```
 12:20 - テーブル3: 山田さん「スマホで注文したい」
         → スタッフがハンディで代行注文「塩ラーメン ¥900」
-        → FireBird: cloud_synced='N' でマーク
+        → FireBird: cloud_synced=FALSE でマーク
         → 厨房印字・調理・提供・会計（通常通り）
 
 12:35 - テーブル4: 鈴木さんもハンディで代行注文「つけ麺 ¥1,200」
-        → 同様にcloud_synced='N'
+        → 同様にcloud_synced=FALSE
 
 ... 計8件の代行注文が蓄積
 ```
@@ -333,7 +333,7 @@ POST /api/pos/request-url
         → ordersテーブルに8件挿入
         → レスポンス: 同期完了
 
-14:33 - POS端末: cloud_synced='Y'に更新
+14:33 - POS端末: cloud_synced=TRUEに更新
         → ステータス: 「正常稼働」
 ```
 
@@ -688,14 +688,8 @@ public function syncOrderWithConsistency($orderData): bool
             OrderItem::create(array_merge($itemData, ['order_id' => $order->id]));
         }
         
-        // 3. change_log記録
-        ChangeLog::create([
-            'entity_type' => 'orders',
-            'entity_id' => $order->id,
-            'action' => 'created',
-            'sync_source' => 'onpremise',
-            'sync_batch_id' => $orderData['sync_batch_id']
-        ]);
+        // POS→Web同期では change_log に記録しない
+        // （change_logsはWeb→POS同期用のため）
         
         DB::commit();
         return true;

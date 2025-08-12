@@ -18,9 +18,9 @@
 ### 1.3 監査方針と同期管理
 - **タイムスタンプ**: 全テーブルに`created_at`, `updated_at`
 - **ソフトデリート**: 履歴保持が必要なテーブルは`deleted_at`
-- **変更ログ**: 重要なデータ変更は`change_logs`テーブルで追跡
+- **変更ログ**: Webサーバー主導の変更を`change_logs`テーブルでPOS同期用に記録
 - **障害復旧**: `cloud_synced`フラグでシンプル管理
-- **POS中心**: 全ての席セッションIDはPOS生成
+- **セッション管理**: 全ての席セッションIDはPOS端末でのみ生成（SESSION_POS_xxx形式）
 
 ## 2. テーブル一覧
 
@@ -31,7 +31,7 @@
 
 ### 2.2 店舗・セッション管理
 - `stores` - 店舗情報
-- `sessions` - 席管理・POS生成セッションID管理
+- `sessions` - 席管理・セッション管理（全てPOS端末で生成）
 - **ゲストセッション** - Redisで管理（guest_session:{token}形式）
 - **障害復旧** - FireBird側の`cloud_synced`フラグで管理
 
@@ -54,7 +54,7 @@
 - `cart_logs` - カート操作ログ（監査・分析用）
 
 ### 2.6 システム管理
-- `change_logs` - データ変更履歴（POS連携用）
+- `change_logs` - Webサーバー主導の変更履歴（POS同期用）
 - `system_settings` - システム設定
 - `failed_jobs` - 失敗したジョブ
 
@@ -103,11 +103,11 @@ CREATE TABLE stores (
 ) ENGINE=InnoDB COMMENT='店舗';
 ```
 
-### 3.3 sessions（POS生成セッション管理）
+### 3.3 sessions（セッション管理）
 ```sql
 CREATE TABLE sessions (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    session_id VARCHAR(100) NOT NULL UNIQUE COMMENT 'POS生成セッションID (SESSION_POS_xxx)',
+    session_id VARCHAR(100) NOT NULL UNIQUE COMMENT 'セッションID (SESSION_POS_xxx形式、POS端末のみ生成)',
     store_id BIGINT UNSIGNED NOT NULL COMMENT '店舗ID',
     table_number VARCHAR(50) NOT NULL COMMENT 'テーブル番号',
     customer_count INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '利用人数',
@@ -115,7 +115,6 @@ CREATE TABLE sessions (
     expires_at TIMESTAMP NOT NULL COMMENT '有効期限',
     started_at TIMESTAMP NULL COMMENT '開始日時',
     completed_at TIMESTAMP NULL COMMENT '完了日時',
-    pos_generated BOOLEAN NOT NULL DEFAULT TRUE COMMENT 'POS生成フラグ',
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
     PRIMARY KEY (id),
@@ -125,7 +124,7 @@ CREATE TABLE sessions (
     INDEX idx_sessions_status (status),
     INDEX idx_sessions_expires_at (expires_at),
     FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE RESTRICT
-) ENGINE=InnoDB COMMENT='POS生成セッション管理';
+) ENGINE=InnoDB COMMENT='セッション管理（全てPOS端末で生成）';
 ```
 
 ### 3.4 products（商品マスター）
@@ -135,7 +134,7 @@ CREATE TABLE products (
     store_id BIGINT UNSIGNED NOT NULL COMMENT '店舗ID',
     code VARCHAR(45) NOT NULL COMMENT 'POS商品ID',
     name VARCHAR(255) NOT NULL COMMENT '商品名',
-    description TEXT NOT NULL COMMENT '商品説明',
+    description TEXT NULL COMMENT '商品説明',
     price DECIMAL(10,2) NOT NULL COMMENT '価格（税抜）',
     tax_in_price DECIMAL(10,2) NOT NULL COMMENT '税込価格',
     cost DECIMAL(10,2) NULL COMMENT '原価',
@@ -183,7 +182,7 @@ CREATE TABLE category_product (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     product_id BIGINT UNSIGNED NOT NULL COMMENT '商品ID',
     category_id BIGINT UNSIGNED NOT NULL COMMENT 'カテゴリID',
-    sort_order INT NOT NULL COMMENT 'ソート順',
+    sort_order INT NOT NULL DEFAULT 0 COMMENT 'ソート順',
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
     PRIMARY KEY (id),
@@ -218,7 +217,7 @@ CREATE TABLE product_to_options (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     product_id BIGINT UNSIGNED NOT NULL COMMENT '商品ID',
     option_id BIGINT UNSIGNED NOT NULL COMMENT 'オプションID',
-    sort_order INT NOT NULL COMMENT 'ソート順',
+    sort_order INT NOT NULL DEFAULT 0 COMMENT 'ソート順',
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
     PRIMARY KEY (id),
@@ -236,7 +235,7 @@ CREATE TABLE option_detail (
     option_id BIGINT UNSIGNED NOT NULL COMMENT 'オプションID',
     product_id BIGINT UNSIGNED NOT NULL COMMENT '商品ID',
     default_selected BOOLEAN NOT NULL DEFAULT FALSE COMMENT 'デフォルトフラグ（画面表示時に選択される）',
-    sort_order INT NOT NULL COMMENT 'ソート順',
+    sort_order INT NOT NULL DEFAULT 0 COMMENT 'ソート順',
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
     PRIMARY KEY (id),
@@ -302,7 +301,7 @@ CREATE TABLE orders (
     order_number VARCHAR(50) NOT NULL UNIQUE COMMENT '注文番号',
     status ENUM('pending', 'confirmed', 'preparing', 'ready', 'completed', 'cancelled') NOT NULL DEFAULT 'pending' COMMENT '注文ステータス',
     total_amount DECIMAL(10,2) NOT NULL COMMENT '合計金額',
-    notes TEXT NULL COMMENT '備考',
+    memo TEXT NULL COMMENT '備考メモ',
     ordered_at TIMESTAMP NOT NULL COMMENT '注文日時',
     confirmed_at TIMESTAMP NULL COMMENT '確認日時',
     completed_at TIMESTAMP NULL COMMENT '完了日時',
@@ -331,7 +330,7 @@ CREATE TABLE order_items (
     quantity INT UNSIGNED NOT NULL COMMENT '数量',
     unit_price DECIMAL(10,2) NOT NULL COMMENT '単価',
     total_price DECIMAL(10,2) NOT NULL COMMENT '小計',
-    notes TEXT NULL COMMENT '備考',
+    memo TEXT NULL COMMENT '備考メモ',
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
     PRIMARY KEY (id),
@@ -343,6 +342,13 @@ CREATE TABLE order_items (
 ```
 
 ### 3.14 order_item_options（注文商品オプション）
+
+#### スナップショットの活用目的
+1. **価格変更耐性**: 注文後にマスター価格が変更されても注文時の価格を保持
+2. **名称変更対応**: 商品名やオプション名が変更されても履歴の正確性を維持
+3. **削除商品の記録**: マスターから削除された商品でも注文履歴に完全な情報を保持
+4. **請求書再発行**: 数年後でも当時の正確な内容で請求書を再発行可能
+
 ```sql
 CREATE TABLE order_item_options (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -371,17 +377,17 @@ CREATE TABLE order_item_options (
 CREATE TABLE cart_logs (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     guest_token VARCHAR(255) NOT NULL COMMENT 'ゲストトークン',
-    session_id BIGINT UNSIGNED NULL COMMENT 'セッションID（あれば）',
+    session_id BIGINT UNSIGNED NOT NULL COMMENT 'セッションID',
     action ENUM('add', 'remove', 'update', 'clear') NOT NULL COMMENT 'カート操作',
     product_id BIGINT UNSIGNED NOT NULL COMMENT '商品ID',
-    quantity INT UNSIGNED NULL COMMENT '数量（削除時はNULL）',
-    unit_price DECIMAL(10,2) NULL COMMENT '操作時の単価',
+    quantity INT UNSIGNED NOT NULL COMMENT '数量（削除時は削除した数を記録）',
+    unit_price DECIMAL(10,2) NOT NULL COMMENT '操作時の単価',
     options JSON NULL COMMENT '選択オプション（シンプルな配列）',
-    cart_total DECIMAL(10,2) NULL COMMENT '操作後のカート合計金額',
+    cart_total DECIMAL(10,2) NOT NULL COMMENT '操作後のカート合計金額',
     is_success BOOLEAN NOT NULL DEFAULT TRUE COMMENT '操作成功フラグ',
     error_code VARCHAR(50) NULL COMMENT 'エラーコード（失敗時のみ）',
     error_message VARCHAR(255) NULL COMMENT 'エラーメッセージ（失敗時のみ）',
-    device_fingerprint VARCHAR(255) NULL COMMENT 'デバイスフィンガープリント',
+    device_fingerprint VARCHAR(255) NOT NULL COMMENT 'デバイスフィンガープリント',
     ip_address VARCHAR(45) NULL COMMENT 'IPアドレス',
     user_agent TEXT NULL COMMENT 'ユーザーエージェント',
     created_at TIMESTAMP NULL,
@@ -394,7 +400,7 @@ CREATE TABLE cart_logs (
     INDEX idx_cart_logs_action (action),
     INDEX idx_cart_logs_device_fingerprint (device_fingerprint),
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT,
-    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE SET NULL
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB COMMENT='カート操作ログ（監査・調査用）';
 ```
 
@@ -421,7 +427,7 @@ CREATE TABLE change_logs (
     INDEX idx_change_logs_created_at (created_at),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (synced_by) REFERENCES users(id) ON DELETE SET NULL
-) ENGINE=InnoDB COMMENT='変更履歴（POS連携用）';
+) ENGINE=InnoDB COMMENT='Webサーバー主導の変更履歴（POS同期用）';
 ```
 
 ### 3.17 system_settings（システム設定）
@@ -461,7 +467,7 @@ CREATE INDEX idx_orders_store_status_date ON orders(store_id, status, ordered_at
 -- 商品検索用
 CREATE INDEX idx_products_store_status_active ON products(store_id, availability_status, is_active);
 
--- POS生成セッション検索用
+-- セッション検索用
 CREATE INDEX idx_sessions_session_id_status ON sessions(session_id, status);
 CREATE INDEX idx_sessions_table_store ON sessions(table_number, store_id);
 
@@ -488,12 +494,14 @@ ALTER TABLE change_logs PARTITION BY RANGE (YEAR(created_at)*100 + MONTH(created
 );
 ```
 
-### 5.2 アーカイブ戦略
-- **change_logs**: 6ヶ月経過後にアーカイブテーブルに移動
-- **cart_logs**: 3ヶ月経過後にアーカイブテーブルに移動（分析データとして保持）
+### 5.2 アーカイブ戦略（日次締め運用前提）
+- **change_logs**: 1ヶ月経過後にアーカイブテーブルに移動（POSに完全データあり）
+- **cart_logs**: 1ヶ月経過後にアーカイブテーブルに移動（分析完了後）
 - **images**: 商品削除時に連動して整理
-- **orders**: 1年経過後にアーカイブテーブルに移動
-- **sessions**: 期限切れ後1週間でクリーンアップ
+- **orders**: 1年経過後にアーカイブテーブルに移動（法的保管期間）
+- **sessions**: 期限切れ後1日でクリーンアップ（軽量化優先）
+
+※重要: POSシステムが全マスターデータを保持する前提
 
 ## 6. データ整合性と障害復旧
 
@@ -501,12 +509,12 @@ ALTER TABLE change_logs PARTITION BY RANGE (YEAR(created_at)*100 + MONTH(created
 ```sql
 -- FireBird側（POS端末）の同期管理
 -- order_managementテーブルに追加
-cloud_synced CHAR(1) DEFAULT 'Y' -- 'Y':同期済み 'N':未同期
+cloud_synced BOOLEAN DEFAULT TRUE -- TRUE:同期済み FALSE:未同期
 
 -- 障害時の動作:
 -- 1. スマホ注文: 完全不可
--- 2. ハンディ注文: cloud_synced='N'で記録
--- 3. 復旧時: cloud_synced='N'のデータを一括同期
+-- 2. ハンディ注文: cloud_synced=FALSEで記録
+-- 3. 復旧時: cloud_synced=FALSEのデータを一括同期
 ```
 
 ## 6. データ整合性
@@ -514,7 +522,7 @@ cloud_synced CHAR(1) DEFAULT 'Y' -- 'Y':同期済み 'N':未同期
 ### 6.1 外部キー制約
 - **CASCADE**: 親データ削除時に子データも削除（order_items等）
 - **RESTRICT**: 子データが存在する場合は親データ削除不可（stores等）
-- **SET NULL**: 親データ削除時にNULLに設定（guest_token等）
+- **SET NULL**: 親データ削除時にNULLに設定（nullable項目のみ）
 
 ### 6.2 CHECK制約
 ```sql
@@ -587,7 +595,7 @@ CHECK (availability_status IN ('available', 'sold_out', 'not_arrived', 'preparin
 - **保持期間**: 不要になった個人情報の自動削除
 
 ### 8.2 監査証跡
-- **change_logs**: 全てのデータ変更を記録
+- **change_logs**: Webサーバー主導のデータ変更を記録（POS同期用）
 - **IPアドレス**: アクセス元の記録
 - **ユーザーエージェント**: アクセス元デバイス情報
 
@@ -605,7 +613,7 @@ guest_session:{token}
     "token": "guest_abc123def456",
     "device_fingerprint": "browser_chrome_win10_hash123",
     "store_id": "1",
-    "session_id": "123",  # DBのsessionsテーブルID（あれば）
+    "session_id": "123",  # DBのsessionsテーブルID（必須）
     "created_at": "2024-01-01T12:00:00+09:00",
     "last_access": "2024-01-01T12:30:00+09:00",
     "language": "ja"
@@ -647,7 +655,7 @@ Redis::hmset("guest_session:{$token}", [
     'token' => $token,
     'device_fingerprint' => $fingerprint,
     'store_id' => $storeId,
-    'session_id' => $sessionId,  // あれば
+    'session_id' => $sessionId,  // 必須
     'created_at' => now()->toISOString(),
     'last_access' => now()->toISOString(),
     'language' => 'ja'
@@ -661,9 +669,8 @@ Redis::hmset("guest_cart:{$token}", [
 ]);
 Redis::expire("guest_cart:{$token}", 1800); // 30分
 
-// アクティビティ時にTTL延長
-Redis::expire("guest_session:{$token}", 1800);
-Redis::expire("guest_cart:{$token}", 1800);
+// 各API呼び出し時にミドルウェアで自動TTL延長（30分）
+// ExtendGuestSession ミドルウェアで実装
 
 // デバイス識別情報設定
 Redis::setex("device:{$fingerprint}", 86400, $token); // 24時間
@@ -677,10 +684,11 @@ Redis::setex("device:{$fingerprint}", 86400, $token); // 24時間
 
 #### 長時間未使用セッション削除
 ```bash
-# 1時間未アクセスのセッションを削除
-php artisan session:cleanup --type=guest --inactive=3600
+# 1日未アクセスのセッションを削除（軽量化優先）
+php artisan session:cleanup --type=guest --inactive=86400
+php artisan archive:old-data --change-logs=30 --cart-logs=30
 ```
 
 ---
 
-**注意**: このデータベース設計はテーブル構成の修正が予定されているため、実装時に最新の要件に合わせて調整してください。
+**注意**: このデータベース設計は軽量化を重視したアーカイブ戦略を採用しています。POSシステムが全マスターデータを保持する前提で設計されているため、データ復旧時はPOSからの同期を活用してください。

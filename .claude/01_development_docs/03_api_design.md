@@ -19,7 +19,7 @@
   - 第2層: ゲストセッション（個人識別 + 不正防止）
 - **POS API**: Bearer Token認証（Laravel Sanctum）
 - **管理画面**: Session認証（Laravel Breeze）
-- **障害復旧**: cloud_synced='N'フラグでシンプル管理
+- **障害復旧**: cloud_synced=FALSEフラグでシンプル管理
 
 ## 2. API命名規則
 
@@ -44,9 +44,9 @@ POST   /api/v1/sessions/start          # セッション開始
 - **複数形**: コレクションリソースは複数形
 - **動詞は使わない**: RESTfulの原則に従う（例外：特殊アクション）
 
-## 3. リクエスト形式
+## 3. 共通仕様
 
-### 3.1 共通ヘッダー
+### 3.1 リクエストヘッダー
 ```http
 Content-Type: application/json
 Accept: application/json
@@ -55,248 +55,62 @@ Authorization: Bearer {token}
 X-Request-ID: {uuid}
 ```
 
-### 3.2 シンプル化されたAPI体系
+### 3.2 レスポンス形式
 
-#### POS用コアAPI（3種類のみ）
-```json
-// 1. URL発行リクエスト
-POST /api/pos/request-url
-{
-  "session_id": "SESSION_POS_20240101_120000_08_001",
-  "table_number": "08"
-}
-→ { "url": "https://mobile-order.com/s/SESSION_POS_xxx" }
-
-// 2. セッション同期（障害復旧時）
-POST /api/pos/sync-sessions
-{
-  "unsynced_sessions": ["SESSION_POS_xxx", "SESSION_POS_yyy"]
-}
-→ { "processed": 2 }
-
-// 3. 注文同期（障害復旧時）
-POST /api/pos/sync-orders
-{
-  "orders": [{ "session_id": "SESSION_POS_xxx", "order_data": {...} }]
-}
-→ { "synced": 10 }
-```
-
-#### モバイル用API（2層認証）
-```json
-// POST /api/v1/orders
-POST /api/mobile/orders
-{
-  "session_id": "SESSION_POS_xxx",  // POS生成のID
-  "guest_token": "guest_abc123def456",
-  "device_fingerprint": "browser_chrome_win10_hash123",
-  "items": [{
-    "product_id": 1,
-    "quantity": 2,
-    "notes": "辛さ控えめ"
-  }]
-}
-```
-
-#### ハンディ端末経由のPOS注文API
-```json
-// POS認証でハンディ注文を代理送信
-POST /api/pos/orders
-Authorization: Bearer pos_system_token_xyz
-{
-  "session_id": "SESSION_POS_xxx",  // POS生成のID
-  "guest_token": "handy_proxy_table08_001",  // 擬似トークン（DB整合性のみ）
-  "device_fingerprint": "handy_device_fingerprint",  // 固定値
-  "items": [{
-    "product_id": 1,
-    "quantity": 2,
-    "notes": "辛さ控えめ"
-  }]
-}
-```
-
-### 3.3 API簡略化のメリット
-```
-【旧設計】
-- 20+ APIエンドポイント
-- 複雑なセッション管理
-- 多層の認証フロー
-
-【新設計】
-- 3個のPOSコアAPI + 標準モバイルAPI
-- POS中心の一元管理
-- シンプルな障害復旧
-
-メリット:
-● 実装コスト減
-● テストケース減
-● デバッグ容易
-● 保守性向上
-```
-
-## 4. レスポンス形式とエラーハンドリング
-
-### 4.1 成功レスポンス
-
-#### 単一リソース
+#### 成功レスポンス
 ```json
 {
   "success": true,
-  "data": {
-    "id": 1,
-    "name": "醤油ラーメン",
-    "price": 950,
-    "created_at": "2024-01-01T12:00:00+09:00",
-    "updated_at": "2024-01-01T12:00:00+09:00"
-  },
-  "message": null
-}
-```
-
-#### リソースコレクション
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": 1,
-      "name": "醤油ラーメン",
-      "price": 950
-    },
-    {
-      "id": 2,
-      "name": "味噌ラーメン",
-      "price": 1050
-    }
-  ],
+  "data": {...},
+  "message": "操作が完了しました",
   "meta": {
     "current_page": 1,
-    "per_page": 20,
-    "total": 45,
-    "last_page": 3
-  },
-  "message": null
+    "total": 100
+  }
 }
 ```
 
-#### 作成成功
-```json
-{
-  "success": true,
-  "data": {
-    "id": 123,
-    "order_number": "2024010112345",
-    "status": "pending",
-    "total_amount": 2100
-  },
-  "message": "注文を受け付けました"
-}
-```
-
-### 4.2 エラーレスポンス
-
-#### バリデーションエラー（422）
+#### エラーレスポンス
 ```json
 {
   "success": false,
   "error": {
     "code": "VALIDATION_ERROR",
     "message": "入力内容に誤りがあります",
-    "details": {
-      "items.0.quantity": [
-        "数量は1以上を指定してください"
-      ],
-      "items.1.product_id": [
-        "指定されたメニューは存在しません"
-      ]
-    }
+    "details": {...}
   }
 }
 ```
 
-#### 認証エラー（401）
-```json
-{
-  "success": false,
-  "error": {
-    "code": "UNAUTHENTICATED",
-    "message": "認証が必要です"
-  }
-}
-```
-
-#### 権限エラー（403）
-```json
-{
-  "success": false,
-  "error": {
-    "code": "FORBIDDEN",
-    "message": "この操作を実行する権限がありません"
-  }
-}
-```
-
-#### リソース未発見（404）
-```json
-{
-  "success": false,
-  "error": {
-    "code": "NOT_FOUND",
-    "message": "指定されたリソースが見つかりません"
-  }
-}
-```
-
-#### サーバーエラー（500）
-```json
-{
-  "success": false,
-  "error": {
-    "code": "INTERNAL_SERVER_ERROR",
-    "message": "サーバーエラーが発生しました。しばらく待ってから再度お試しください",
-    "request_id": "123e4567-e89b-12d3-a456-426614174000"
-  }
-}
-```
-
-## 5. HTTPステータスコード
-
-### 5.1 成功系
+### 3.3 HTTPステータスコード
 - **200 OK**: 取得・更新成功
-- **201 Created**: 作成成功（Locationヘッダー付き）
-- **204 No Content**: 削除成功
-
-### 5.2 クライアントエラー系
+- **201 Created**: 作成成功
 - **400 Bad Request**: リクエスト形式エラー
 - **401 Unauthorized**: 認証エラー
 - **403 Forbidden**: 権限エラー
 - **404 Not Found**: リソース未発見
-- **409 Conflict**: リソース競合（重複等）
 - **422 Unprocessable Entity**: バリデーションエラー
-- **429 Too Many Requests**: レート制限超過
-
-### 5.3 サーバーエラー系
 - **500 Internal Server Error**: サーバー内部エラー
-- **502 Bad Gateway**: 外部サービスエラー
-- **503 Service Unavailable**: メンテナンス中
-- **504 Gateway Timeout**: タイムアウト
 
-## 6. API エンドポイント一覧
+## 4. API エンドポイント一覧
 
-### 6.1 認証API
+### 4.1 認証・セッション管理API
+
+#### 席セッション認証
 ```
-# 席セッション（QRコード読み取り）
 POST   /api/v1/auth/session/start    # QRコードセッション開始
 POST   /api/v1/auth/session/refresh  # セッショントークンリフレッシュ
 POST   /api/v1/auth/session/end      # セッション終了
-
-# ゲストセッション（自動）
-POST   /api/v1/auth/guest/start      # ゲストセッション開始
-POST   /api/v1/auth/guest/refresh    # ゲストトークンリフレッシュ
-DELETE /api/v1/auth/guest/end        # ゲストセッション終了
 ```
 
-### 6.2 メニューAPI
+#### ゲストセッション（自動延長）
+```
+POST   /api/v1/auth/guest/start      # ゲストセッション開始
+DELETE /api/v1/auth/guest/end        # ゲストセッション終了
+# 注：各API実行時に自動的にTTL延長（30分）
+```
+
+### 4.2 メニューAPI（読み取り専用）
 ```
 GET    /api/v1/categories            # カテゴリ一覧
 GET    /api/v1/products              # 商品一覧
@@ -305,21 +119,27 @@ GET    /api/v1/products/{id}/options # 商品のオプション一覧
 GET    /api/v1/categories/{id}/products # カテゴリ別商品一覧
 ```
 
-### 6.3 注文API
+### 4.3 注文・カートAPI
 ```
+# 注文管理
 POST   /api/v1/orders                # 注文作成
 GET    /api/v1/orders/{id}          # 注文詳細
-GET    /api/v1/sessions/{id}/orders # セッションの注文履歴
-POST   /api/v1/orders/{id}/cancel   # 注文キャンセル
+GET    /api/v1/sessions/{id}/orders # セッション注文履歴（席全体）
+
+# カート管理
+POST   /api/v1/guest/cart/items     # カートアイテム追加
+GET    /api/v1/guest/cart           # カート内容取得
+DELETE /api/v1/guest/cart/items/{product_id} # アイテム削除
+DELETE /api/v1/guest/cart           # カートクリア
 ```
 
-### 6.4 POS連携API
+### 4.4 POS連携API
 ```
 GET    /api/v1/pos/changes           # 変更履歴取得（ポーリング）
-GET    /api/v1/pos/changes/detail   # 変更詳細取得
 POST   /api/v1/pos/changes/sync     # 同期完了通知
 GET    /api/v1/pos/orders            # 注文一覧取得
 PUT    /api/v1/pos/orders/{id}      # 注文ステータス更新
+POST   /api/v1/pos/orders/{id}/cancel # 注文キャンセル（ハンディ端末専用）
 PUT    /api/v1/pos/products/{id}    # 商品提供状態更新
 POST   /api/v1/pos/sessions/extend   # 席セッション延長
 POST   /api/v1/pos/auth/login        # POSログイン認証
@@ -327,280 +147,260 @@ POST   /api/v1/pos/auth/refresh      # POSトークン更新
 POST   /api/v1/pos/translations/sync # 多言語翻訳同期
 ```
 
-### 6.5 管理API
+### 4.5 POS専用API（商品データ操作）
 ```
-# メニュー管理
-# 商品管理
-GET    /api/v1/admin/products       # 商品一覧（管理用）
-POST   /api/v1/admin/products       # 商品作成
-PUT    /api/v1/admin/products/{id}  # 商品更新
-DELETE /api/v1/admin/products/{id}  # 商品削除
+# 商品マスター管理（POS端末からのみアクセス可能）
+GET    /api/v1/pos/products         # 商品一覧
+POST   /api/v1/pos/products         # 商品作成
+PUT    /api/v1/pos/products/{id}    # 商品更新
+DELETE /api/v1/pos/products/{id}    # 商品削除
 
-# カテゴリ管理
-GET    /api/v1/admin/categories     # カテゴリ一覧
-POST   /api/v1/admin/categories     # カテゴリ作成
-PUT    /api/v1/admin/categories/{id} # カテゴリ更新
-DELETE /api/v1/admin/categories/{id} # カテゴリ削除
+# カテゴリマスター管理（POS端末からのみアクセス可能）
+GET    /api/v1/pos/categories       # カテゴリ一覧
+POST   /api/v1/pos/categories       # カテゴリ作成
+PUT    /api/v1/pos/categories/{id}  # カテゴリ更新
+DELETE /api/v1/pos/categories/{id}  # カテゴリ削除
 
-# オプション管理
-GET    /api/v1/admin/options        # オプション一覧
-POST   /api/v1/admin/options        # オプション作成
-PUT    /api/v1/admin/options/{id}   # オプション更新
-DELETE /api/v1/admin/options/{id}   # オプション削除
-
-# セッション管理
-GET    /api/v1/admin/sessions       # セッション一覧
-POST   /api/v1/admin/sessions/qr    # QRコード生成
+# オプションマスター管理（POS端末からのみアクセス可能）
+GET    /api/v1/pos/options          # オプション一覧
+POST   /api/v1/pos/options          # オプション作成
+PUT    /api/v1/pos/options/{id}     # オプション更新
+DELETE /api/v1/pos/options/{id}     # オプション削除
 ```
 
-## 7. 共通仕様
-
-### 7.1 日時フォーマット
-- **ISO 8601形式**: `2024-01-01T12:00:00+09:00`
-- **タイムゾーン**: Asia/Tokyo（JST）
-
-### 7.2 文字コード
-- **UTF-8**: 全ての文字列データ
-- **絵文字対応**: UTF8MB4
-
-### 7.3 画像URL
-- **完全URL**: `https://example.com/storage/images/menu/1.webp`
-- **WebP形式推奨**: モバイル最適化
-
-### 7.4 多言語対応
-- **Accept-Language**: ヘッダーで言語指定
-- **対応言語**: ja, en, zh-TW, zh-CN, ko
-- **デフォルト言語**: ja
-
-### 7.5 レート制限
+### 4.6 管理API（読み取り専用）
 ```
-# レスポンスヘッダー
-X-RateLimit-Limit: 60
-X-RateLimit-Remaining: 45
-X-RateLimit-Reset: 1704067200
-```
+# メニュー閲覧（POS専用のCRUD操作により作成されたデータの表示のみ）
+GET    /api/v1/admin/products       # 商品一覧（読み取り専用）
+GET    /api/v1/admin/products/{id}  # 商品詳細（読み取り専用）
+GET    /api/v1/admin/categories     # カテゴリ一覧（読み取り専用）
+GET    /api/v1/admin/categories/{id} # カテゴリ詳細（読み取り専用）
+GET    /api/v1/admin/options        # オプション一覧（読み取り専用）
+GET    /api/v1/admin/options/{id}   # オプション詳細（読み取り専用）
 
-## 8. セキュリティ
+# Web固有設定管理（管理画面で変更可能）
+GET    /api/v1/admin/settings       # システム設定一覧
+PUT    /api/v1/admin/settings/{key} # システム設定更新
 
-### 8.1 CORS設定
-```
-Access-Control-Allow-Origin: https://example.com
-Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
-Access-Control-Allow-Headers: Content-Type, Authorization, X-Request-ID
-Access-Control-Max-Age: 86400
+# ユーザー管理（管理画面で変更可能）
+GET    /api/v1/admin/users          # ユーザー一覧
+POST   /api/v1/admin/users          # ユーザー作成
+PUT    /api/v1/admin/users/{id}     # ユーザー更新
+DELETE /api/v1/admin/users/{id}     # ユーザー削除
+
+# セッション管理（読み取り専用）
+GET    /api/v1/admin/sessions       # セッション一覧（読み取り専用）
+GET    /api/v1/admin/sessions/{id}  # セッション詳細（読み取り専用）
+
+# レポート（読み取り専用）
+GET    /api/v1/admin/reports/sales  # 売上レポート
+GET    /api/v1/admin/reports/products # 商品分析レポート
 ```
 
-### 8.2 リクエスト署名（POS API）
-```
-X-Signature: sha256=HMAC-SHA256(request_body, secret_key)
-X-Timestamp: 1704067200
+## 5. API詳細仕様
+
+### 5.0 メニューAPI（読み取り専用）
+
+#### カテゴリ一覧
+```http
+GET /api/v1/categories
 ```
 
-### 8.3 セキュリティヘッダー
-```
-X-Content-Type-Options: nosniff
-X-Frame-Options: DENY
-X-XSS-Protection: 1; mode=block
-Strict-Transport-Security: max-age=31536000; includeSubDomains
-```
+**呼び出しタイミング**
+- **誰が**: スマホアプリ（フロントエンド）
+- **いつ**: メニュー画面初回表示時
+- **目的**: 利用可能な商品カテゴリ一覧を取得しメニュー構成を表示
 
-## 9. 実装例（Laravel）
-
-### 9.1 コントローラー実装
-```php
-class ProductController extends Controller
+**レスポンス**
+```json
 {
-    public function index(Request $request): JsonResponse
+  "success": true,
+  "data": [
     {
-        $query = Product::with(['categories', 'options'])
-            ->where('is_active', true);
-            
-        // フィルタリング
-        if ($request->has('category_id')) {
-            $query->where('category_id', $request->category_id);
-        }
-        
-        // ページネーション
-        $items = $query->paginate($request->get('per_page', 20));
-        
-        return $this->successResponse(
-            data: ProductResource::collection($items),
-            meta: $this->paginationMeta($items)
-        );
-    }
-    
-    protected function successResponse($data, $meta = null, $message = null): JsonResponse
+      "id": 1,
+      "name": "ラーメン",
+      "translations": {
+        "en": "Ramen",
+        "zh-TW": "拉麵"
+      },
+      "sort_order": 1,
+      "is_active": true
+    },
     {
-        return response()->json([
-            'success' => true,
-            'data' => $data,
-            'meta' => $meta,
-            'message' => $message,
-        ]);
+      "id": 2,
+      "name": "サイドメニュー",
+      "translations": {
+        "en": "Side Menu",
+        "zh-TW": "配菜"
+      },
+      "sort_order": 2,
+      "is_active": true
     }
+  ]
 }
 ```
 
-### 9.2 POS API: 商品提供状態更新
-```php
-// PUT /api/v1/pos/products/{id}
-public function updateProductAvailability(Request $request, $id)
+#### 商品一覧
+```http
+GET /api/v1/products?category_id=1
+```
+
+**呼び出しタイミング**
+- **誰が**: スマホアプリ（フロントエンド）
+- **いつ**: カテゴリ選択後、商品一覧表示時
+- **目的**: 指定カテゴリの商品一覧を取得（価格、在庫状況含む）
+
+**レスポンス**
+```json
 {
-    $validated = $request->validate([
-        'availability_status' => 'required|in:available,sold_out,not_arrived,preparing',
-        'availability_message' => 'nullable|string|max:255',
-        'expected_available_time' => 'nullable|date_format:H:i',
-    ]);
-    
-    $product = Product::findOrFail($id);
-    $product->update($validated);
-    
-    // 変更履歴を記録
-    ChangeLog::create([
-        'entity_type' => 'products',
-        'entity_id' => $product->id,
-        'action' => 'updated',
-        'changes' => json_encode([
-            'availability_status' => [
-                'old' => $product->getOriginal('availability_status'),
-                'new' => $validated['availability_status']
-            ]
-        ]),
-        'user_id' => auth()->id(),
-        'user_type' => 'pos_system',
-    ]);
-    
-    return response()->json([
-        'success' => true,
-        'data' => [
-            'id' => $product->id,
-            'availability_status' => $product->availability_status,
-            'availability_message' => $product->availability_message,
-            'expected_available_time' => $product->expected_available_time,
-        ]
-    ]);
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "name": "醤油ラーメン",
+      "description": "昔ながらの醤油ベース",
+      "price": 800,
+      "tax_in_price": 880,
+      "availability_status": "available",
+      "image_url": "https://example.com/images/shoyu-ramen.jpg",
+      "translations": {
+        "en": "Soy Sauce Ramen",
+        "zh-TW": "醬油拉麵"
+      }
+    },
+    {
+      "id": 2,
+      "name": "味噌ラーメン",
+      "description": "コクのある味噌ベース",
+      "price": 900,
+      "tax_in_price": 990,
+      "availability_status": "sold_out",
+      "availability_message": "本日売り切れ",
+      "image_url": "https://example.com/images/miso-ramen.jpg"
+    }
+  ],
+  "meta": {
+    "current_page": 1,
+    "per_page": 20,
+    "total": 15
+  }
 }
 ```
 
-### 9.3 商品詳細API（オプション付き）
-```php
-// GET /api/v1/products/{id}
-public function show($id)
+#### 商品詳細
+```http
+GET /api/v1/products/{id}
+```
+
+**呼び出しタイミング**
+- **誰が**: スマホアプリ（フロントエンド）
+- **いつ**: 商品タップ時、商品詳細画面表示時
+- **目的**: 商品の詳細情報と選択可能オプションを表示
+
+**レスポンス**
+```json
 {
-    $product = Product::with([
-        'categories',
-        'images' => function($query) {
-            $query->orderBy('sort_order');
+  "success": true,
+  "data": {
+    "id": 1,
+    "name": "醤油ラーメン",
+    "description": "昔ながらの醤油ベース。コクと旨味が絶妙にバランス",
+    "price": 800,
+    "tax_in_price": 880,
+    "availability_status": "available",
+    "image_url": "https://example.com/images/shoyu-ramen.jpg",
+    "translations": {
+      "en": {
+        "name": "Soy Sauce Ramen",
+        "description": "Traditional soy sauce based ramen with rich flavor"
+      }
+    },
+    "has_options": true
+  }
+}
+```
+
+#### 商品オプション一覧
+```http
+GET /api/v1/products/{id}/options
+```
+
+**呼び出しタイミング**
+- **誰が**: スマホアプリ（フロントエンド）
+- **いつ**: 商品詳細画面表示時（オプションが存在する場合）
+- **目的**: 商品に関連するオプション（サイズ、トッピング等）を取得
+
+**レスポンス**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "title": "麺の硬さ",
+      "required": true,
+      "selection_type": "single",
+      "choices": [
+        {
+          "product_id": 3,
+          "name": "やわらか",
+          "price": 0,
+          "default_selected": false
         },
-        'options' => function($query) {
-            $query->with(['optionProducts' => function($query) {
-                $query->orderBy('sort_order');
-            }]);
+        {
+          "product_id": 4,
+          "name": "普通",
+          "price": 0,
+          "default_selected": true
+        },
+        {
+          "product_id": 5,
+          "name": "かため",
+          "price": 0,
+          "default_selected": false
         }
-    ])->findOrFail($id);
-    
-    return response()->json([
-        'success' => true,
-        'data' => [
-            'id' => $product->id,
-            'code' => $product->code,
-            'name' => $product->name,
-            'description' => $product->description,
-            'price' => $product->price,
-            'tax_in_price' => $product->tax_in_price,
-            'tax_type' => $product->tax_type,
-            'availability_status' => $product->availability_status,
-            'availability_message' => $product->availability_message,
-            'expected_available_time' => $product->expected_available_time,
-            'image_url' => $product->image_url,
-            'images' => $product->images,
-            'categories' => $product->categories,
-            'options' => $product->options->map(function($option) {
-                return [
-                    'id' => $option->id,
-                    'title' => $option->title,
-                    'description' => $option->description,
-                    'required' => $option->required,
-                    'selection_type' => $option->selection_type,
-                    'choices' => $option->optionProducts->map(function($choice) {
-                        return [
-                            'id' => $choice->id,
-                            'name' => $choice->name,
-                            'price' => $choice->price,
-                            'tax_in_price' => $choice->tax_in_price,
-                            'availability_status' => $choice->availability_status,
-                            'default' => $choice->pivot->default,
-                        ];
-                    })
-                ];
-            })
-        ]
-    ]);
-}
-```
-
-### 9.4 カテゴリ別商品一覧API
-```php
-// GET /api/v1/categories/{id}/products
-public function getCategoryProducts($categoryId, Request $request)
-{
-    $products = Product::whereHas('categories', function($query) use ($categoryId) {
-        $query->where('categories.id', $categoryId);
-    })
-    ->with(['categories', 'images'])
-    ->where('availability_status', 'available')
-    ->where('is_active', true)
-    ->orderByRaw('
-        (SELECT sort_order FROM category_product 
-         WHERE category_product.product_id = products.id 
-         AND category_product.category_id = ?) ASC
-    ', [$categoryId])
-    ->paginate($request->get('per_page', 20));
-    
-    return response()->json([
-        'success' => true,
-        'data' => $products->items(),
-        'meta' => [
-            'current_page' => $products->currentPage(),
-            'total' => $products->total(),
-            'per_page' => $products->perPage(),
-        ]
-    ]);
-}
-```
-
-### 9.5 エラーハンドリング
-```php
-class ApiExceptionHandler
-{
-    public function render($request, Throwable $exception)
+      ]
+    },
     {
-        if ($exception instanceof ValidationException) {
-            return response()->json([
-                'success' => false,
-                'error' => [
-                    'code' => 'VALIDATION_ERROR',
-                    'message' => '入力内容に誤りがあります',
-                    'details' => $exception->errors(),
-                ],
-            ], 422);
+      "id": 2,
+      "title": "トッピング",
+      "required": false,
+      "selection_type": "multiple",
+      "choices": [
+        {
+          "product_id": 10,
+          "name": "チャーシュー",
+          "price": 200,
+          "default_selected": false
+        },
+        {
+          "product_id": 11,
+          "name": "ネギ",
+          "price": 100,
+          "default_selected": false
         }
-        
-        // その他のエラー処理...
+      ]
     }
+  ]
 }
 ```
 
-### 9.6 ゲストセッション認証API仕様
+### 5.1 ゲストセッション認証
 
 #### ゲストセッション開始
 ```http
 POST /api/v1/auth/guest/start
 ```
 
+**呼び出しタイミング**
+- **誰が**: スマホアプリ（フロントエンド）
+- **いつ**: QRコード読み取り → 席セッション取得後に自動実行
+- **目的**: 個人識別・不正防止・デバイス特定のため
+
 **リクエスト**
 ```json
 {
+  "session_id": 123,
   "device_fingerprint": "browser_chrome_win10_hash123",
   "store_id": 1,
   "language": "ja"
@@ -614,6 +414,7 @@ POST /api/v1/auth/guest/start
   "data": {
     "token": "guest_abc123def456ghi789",
     "expires_in": 1800,
+    "session_id": 123,
     "device_fingerprint": "browser_chrome_win10_hash123",
     "store_id": 1
   },
@@ -621,56 +422,76 @@ POST /api/v1/auth/guest/start
 }
 ```
 
-#### ゲストセッション更新
-```http
-POST /api/v1/auth/guest/refresh
-Authorization: Bearer guest_abc123def456ghi789
+#### ゲストセッション自動延長
+```
+各API呼び出し時に自動的にTTLを30分に延長
+- ミドルウェアで透明に処理
+- ゲストトークン（guest_*）の場合のみ実行
+- Redis TTL: guest_session:{token}, guest_cart:{token}
+- last_access フィールドも自動更新
 ```
 
-**リクエスト**
-```json
+**実装例（ミドルウェア）**
+```php
+class ExtendGuestSession
 {
-  "device_fingerprint": "browser_chrome_win10_hash123"
+    public function handle($request, Closure $next)
+    {
+        $response = $next($request);
+        
+        if ($token = $request->bearerToken()) {
+            if (str_starts_with($token, 'guest_')) {
+                Redis::expire("guest_session:{$token}", 1800);
+                Redis::expire("guest_cart:{$token}", 1800);
+                Redis::hset("guest_session:{$token}", 'last_access', now()->toISOString());
+            }
+        }
+        
+        return $response;
+    }
 }
 ```
 
-**レスポンス（成功）**
-```json
-{
-  "success": true,
-  "data": {
-    "token": "guest_abc123def456ghi789",
-    "expires_in": 1800,
-    "last_access": "2024-01-01T12:30:00+09:00"
-  }
-}
-```
+### 5.2 カート操作API
 
-#### ゲストカート操作API
-
-**カートアイテム追加**
+#### カートアイテム追加
 ```http
 POST /api/v1/guest/cart/items
 Authorization: Bearer guest_abc123def456ghi789
 ```
 
+**呼び出しタイミング**
+- **誰が**: スマホアプリ（フロントエンド）
+- **いつ**: 商品詳細画面で「カートに追加」ボタンクリック時
+- **目的**: 選択した商品とオプションをカートに追加
+
 **リクエスト**
 ```json
 {
-  "product_id": 1,
-  "quantity": 2,
-  "options": [
-    {"option_id": 10, "product_id": 201},  // シンプルな配列形式
-    {"option_id": 11, "product_id": 202}
-  ]
+  "product_id": 1,     // メイン商品ID
+  "quantity": 2,       // 数量
+  "options": {
+    "1": [5],          // オプションID=1（麺の硬さ）で商品ID=5（かため）を選択
+    "2": [10, 11]      // オプションID=2（トッピング）で商品ID=10,11を複数選択
+  }
 }
 ```
 
-**カート内容取得**
+**※注意**: options形式は統一商品マスター設計に基づく
+- キー: オプションID（options.id）
+- 値: 選択された商品IDの配列（products.id）
+- 全ての選択肢は商品マスターで管理される
+
+#### カート内容取得
 ```http
 GET /api/v1/guest/cart
 Authorization: Bearer guest_abc123def456ghi789
 ```
+
+**呼び出しタイミング**
+- **誰が**: スマホアプリ（フロントエンド）
+- **いつ**: カート画面表示時、注文確認画面表示時
+- **目的**: 現在のカート内容と合計金額を表示
 
 **レスポンス**
 ```json
@@ -700,23 +521,18 @@ Authorization: Bearer guest_abc123def456ghi789
 }
 ```
 
-**カートアイテム削除**
-```http
-DELETE /api/v1/guest/cart/items/{product_id}
-Authorization: Bearer guest_abc123def456ghi789
-```
+### 5.3 注文作成API
 
-**カートクリア**
-```http
-DELETE /api/v1/guest/cart
-Authorization: Bearer guest_abc123def456ghi789
-```
-
-#### ゲスト注文作成API（2層認証対応）
+#### ゲスト注文作成（2層認証対応）
 ```http
 POST /api/v1/guest/orders
 Authorization: Bearer guest_abc123def456ghi789
 ```
+
+**呼び出しタイミング**
+- **誰が**: スマホアプリ（フロントエンド）、POS経由ハンディ端末
+- **いつ**: 注文確認画面で「注文を確定する」ボタンクリック時
+- **目的**: カート内容を正式な注文として登録
 
 **リクエスト**
 ```json
@@ -725,16 +541,46 @@ Authorization: Bearer guest_abc123def456ghi789
   "device_fingerprint": "browser_chrome_win10_hash123",  // デバイス識別（不正防止）
   "items": [
     {
-      "product_id": 1,
-      "quantity": 2,
+      "product_id": 1,     // メイン商品ID（例：ラーメン）
+      "quantity": 2,       // 数量
       "options": {
-        "1": [5]
+        "1": [5],          // オプションID=1（麺の硬さ）で商品ID=5（かため）を選択
+        "2": [10, 11]      // オプションID=2（トッピング）で商品ID=10,11（チャーシュー、ネギ）を複数選択
       },
-      "notes": "辛さ控えめ"
+      "memo": "辛さ控えめ"
     }
   ],
-  "notes": "テイクアウトでお願いします"
+  "memo": "テイクアウトでお願いします"
 }
+```
+
+**options構造の詳細説明:**
+```json
+// options: { "オプションID": [選択された商品IDの配列] }
+"options": {
+  "1": [5],      // オプション「麺の硬さ」で「かため」を選択
+  "2": [10, 11]  // オプション「トッピング」で「チャーシュー」と「ネギ」を選択
+}
+```
+
+**統一商品マスター設計による構造:**
+```
+商品マスター（products）に全てを格納:
+- id=1: ラーメン（メイン商品）
+- id=5: かため（オプション選択肢）
+- id=10: チャーシュー（オプション選択肢）
+- id=11: ネギ（オプション選択肢）
+
+オプションマスター（options）:
+- id=1: 麺の硬さ（single選択）
+- id=2: トッピング（multiple選択）
+
+紐付け（option_detail）:
+- option_id=1, product_id=3（やわらか）
+- option_id=1, product_id=4（普通）
+- option_id=1, product_id=5（かため）
+- option_id=2, product_id=10（チャーシュー）
+- option_id=2, product_id=11（ネギ）
 ```
 
 **レスポンス（成功）**
@@ -755,11 +601,150 @@ Authorization: Bearer guest_abc123def456ghi789
 }
 ```
 
-#### ゲスト注文履歴取得API
+### 5.4 セッション注文履歴API（席全体の注文状況）
+
+#### 注文履歴取得（ゲスト識別アイコン付き）
 ```http
-GET /api/v1/guest/orders
-Authorization: Bearer guest_abc123def456ghi789
+GET /api/v1/sessions/{id}/orders
 ```
+
+**呼び出しタイミング**
+- **誰が**: スマホアプリ（フロントエンド）
+- **いつ**: 注文履歴画面表示時、注文完了後の確認時
+- **目的**: 同席者全体の注文状況と個人識別アイコンを表示
+
+**レスポンス**
+```json
+{
+  "success": true,
+  "data": {
+    "session": {
+      "id": 123,
+      "table_number": "8",
+      "customer_count": 3,
+      "status": "active"
+    },
+    "orders": [
+      {
+        "id": 1,
+        "order_number": "20240101001",
+        "guest_identifier": "🐶",
+        "guest_color": "#FF6B6B",
+        "status": "preparing",
+        "total_amount": 1200,
+        "ordered_at": "2024-01-01T12:30:00+09:00",
+        "items": [
+          {
+            "product_name": "醤油ラーメン",
+            "quantity": 2,
+            "unit_price": 600,
+            "options": "チャーシュー追加、麺かため"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "order_number": "20240101002", 
+        "guest_identifier": "🐱",
+        "guest_color": "#4ECDC4",
+        "status": "completed",
+        "total_amount": 800,
+        "ordered_at": "2024-01-01T12:32:00+09:00",
+        "items": [
+          {
+            "product_name": "チャーハン",
+            "quantity": 1,
+            "unit_price": 800,
+            "options": ""
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "order_number": "20240101003",
+        "guest_identifier": "🐰",
+        "guest_color": "#95E1D3",
+        "status": "preparing", 
+        "total_amount": 600,
+        "ordered_at": "2024-01-01T12:35:00+09:00",
+        "items": [
+          {
+            "product_name": "餃子",
+            "quantity": 1,
+            "unit_price": 600,
+            "options": ""
+          }
+        ]
+      }
+    ],
+    "summary": {
+      "total_orders": 3,
+      "total_amount": 2600,
+      "pending_orders": 2,
+      "completed_orders": 1
+    }
+  }
+}
+```
+
+#### ゲスト識別アイコン生成システム
+
+**基本仕様**
+- **動物アイコン**: 親しみやすく覚えやすい
+- **装飾子付与**: 大人数時の重複回避
+- **カラーパレット**: 背景色で更なる識別性向上
+
+**実装例**
+```php
+// 基本アイコン（10種類）
+$baseIcons = ['🐶', '🐱', '🐰', '🐼', '🐸', '🐧', '🦊', '🐨', '🐯', '🐻'];
+
+// 装飾子（大人数時の重複回避）
+$modifiers = ['', '✨', '🎀', '🌟'];
+
+// 色パレット（識別用背景色）
+$colors = ['#FF6B6B', '#4ECDC4', '#95E1D3', '#FFA726', '#AB47BC', 
+           '#5C6BC0', '#26A69A', '#66BB6A', '#FFCC02', '#FF7043'];
+
+function generateGuestIdentifier($deviceFingerprint, $sessionId) {
+    $hash = substr(md5($deviceFingerprint . $sessionId), 0, 8);
+    $iconIndex = hexdec(substr($hash, 0, 2)) % 10;
+    $modifierIndex = hexdec(substr($hash, 2, 2)) % 4;
+    $colorIndex = hexdec(substr($hash, 4, 2)) % 10;
+    
+    return [
+        'icon' => $baseIcons[$iconIndex] . $modifiers[$modifierIndex],
+        'color' => $colors[$colorIndex]
+    ];
+}
+```
+
+**UI表示イメージ**
+```
+テーブル8番の注文状況:
+
+🐶 醤油ラーメン×2     ¥1,200  準備中  12:30
+   チャーシュー追加、麺かため
+   
+🐱 チャーハン×1       ¥800   完了   12:32
+
+🐰 餃子×1           ¥600   準備中  12:35
+
+合計: ¥2,600 (3件の注文)
+```
+
+### 5.5 POS連携API
+
+#### 変更履歴取得（ポーリング）
+```http
+GET /api/v1/pos/changes?since=2024-01-01T12:00:00+09:00&store_id=1
+Authorization: Bearer pos_system_token
+```
+
+**呼び出しタイミング**
+- **誰が**: POS端末（Delphiアプリケーション）
+- **いつ**: 30秒〜1分間隔の定期実行
+- **目的**: クラウドで発生した注文等の変更を取得・同期
 
 **レスポンス**
 ```json
@@ -768,26 +753,349 @@ Authorization: Bearer guest_abc123def456ghi789
   "data": [
     {
       "id": 123,
-      "order_number": "GUEST2024010112345",
-      "status": "preparing",
-      "total_amount": 2000,
-      "ordered_at": "2024-01-01T12:00:00+09:00",
-      "items": [
-        {
-          "product_name": "醤油ラーメン",
-          "quantity": 2,
-          "unit_price": 950
-        }
-      ]
+      "entity_type": "orders",
+      "entity_id": 456,
+      "action": "created",
+      "changes": {
+        "session_id": 789,
+        "total_amount": 1500,
+        "items": [
+          {
+            "product_id": 1,
+            "quantity": 2,
+            "options": {"1": [5]}
+          }
+        ]
+      },
+      "created_at": "2024-01-01T12:30:00+09:00"
     }
   ],
   "meta": {
-    "total": 1
+    "last_sync_time": "2024-01-01T12:30:00+09:00",
+    "total_changes": 1
   }
 }
 ```
 
-### 9.7 エラーハンドリング（ゲストセッション）
+#### 同期完了通知
+```http
+POST /api/v1/pos/changes/sync
+Authorization: Bearer pos_system_token
+```
+
+**呼び出しタイミング**
+- **誰が**: POS端末（Delphiアプリケーション）
+- **いつ**: 変更履歴をローカルDBに反映後
+- **目的**: 同期完了を通知しchange_logsのis_syncedフラグを更新
+
+**リクエスト**
+```json
+{
+  "change_log_ids": [123, 124, 125],
+  "synced_at": "2024-01-01T12:31:00+09:00",
+  "store_id": 1
+}
+```
+
+**レスポンス**
+```json
+{
+  "success": true,
+  "data": {
+    "synced_count": 3,
+    "synced_ids": [123, 124, 125]
+  },
+  "message": "同期完了を記録しました"
+}
+```
+
+#### 注文キャンセル（ハンディ端末専用）
+```http
+POST /api/v1/pos/orders/{id}/cancel
+Authorization: Bearer pos_system_token
+```
+
+**呼び出しタイミング**
+- **誰が**: POS経由ハンディ端末（スタッフ操作）
+- **いつ**: 注文キャンセルが必要な場合（品切れ等）
+- **目的**: 既に受けた注文をキャンセルして変更履歴に記録
+
+#### 商品提供状態更新
+```http
+PUT /api/v1/pos/products/{id}
+Authorization: Bearer pos_system_token
+```
+
+**呼び出しタイミング**
+- **誰が**: POS端末（在庫管理機能）
+- **いつ**: 商品の在庫状況変化時（品切れ、未入荷、準備中等）
+- **目的**: リアルタイムな在庫状況をクラウドに同期
+
+**リクエスト**
+```json
+{
+  "availability_status": "sold_out",
+  "availability_message": "本日売り切れ",
+  "expected_available_time": null
+}
+```
+
+**レスポンス**
+```json
+{
+  "success": true,
+  "data": {
+    "id": 1,
+    "name": "醤油ラーメン",
+    "availability_status": "sold_out",
+    "availability_message": "本日売り切れ",
+    "updated_at": "2024-01-01T12:32:00+09:00"
+  },
+  "message": "商品提供状態を更新しました"
+}
+```
+
+### 5.6 管理API（読み取り専用）
+
+#### 商品一覧
+```http
+GET /api/v1/admin/products
+Authorization: Cookie (Laravel Breeze)
+```
+
+**呼び出しタイミング**
+- **誰が**: 管理者・スタッフ（管理画面）
+- **いつ**: 管理画面の商品一覧ページ表示時
+- **目的**: POSで作成された商品データの閲覧（編集不可）
+
+#### システム設定管理
+```http
+PUT /api/v1/admin/settings/{key}
+Authorization: Cookie (Laravel Breeze)
+```
+
+**呼び出しタイミング**
+- **誰が**: 管理者（管理画面）
+- **いつ**: システム設定変更時（表示言語、タイムアウト時間等）
+- **目的**: Web固有の設定を変更（POSには影響せず）
+
+### 5.7 POS専用API（商品データ操作）
+
+#### 商品作成
+```http
+POST /api/v1/pos/products
+Authorization: Bearer pos_system_token
+```
+
+**呼び出しタイミング**
+- **誰が**: POS端末（商品マスター管理機能）
+- **いつ**: 新商品登録時、メニュー追加時
+- **目的**: 新しい商品をクラウドに同期しchange_logsに記録
+
+#### カテゴリ管理
+```http
+PUT /api/v1/pos/categories/{id}
+Authorization: Bearer pos_system_token
+```
+
+**呼び出しタイミング**
+- **誰が**: POS端末（カテゴリマスター管理機能）
+- **いつ**: カテゴリ名変更、表示順変更時
+- **目的**: カテゴリ情報をクラウドに同期しchange_logsに記録
+
+#### 多言語翻訳同期
+```http
+POST /api/v1/pos/translations/sync
+Authorization: Bearer pos_system_token
+```
+
+**呼び出しタイミング**
+- **誰が**: POS端末（翻訳サービス連携機能）
+- **いつ**: 新商品登録後、既存商品名変更後
+- **目的**: Dify経由で多言語翻訳を取得し商品マスターを更新
+
+### 5.8 追加のAPIエンドポイント
+
+#### 席セッション開始
+```http
+POST /api/v1/auth/session/start
+```
+
+**呼び出しタイミング**
+- **誰が**: スマホアプリ（フロントエンド）
+- **いつ**: QRコード読み取り後、初回アクセス時
+- **目的**: POS生成の席セッションIDを検証しテーブル情報を取得
+
+**リクエスト**
+```json
+{
+  "session_id": "SESSION_POS_20240101_001",
+  "customer_count": 2
+}
+```
+
+**レスポンス**
+```json
+{
+  "success": true,
+  "data": {
+    "session_id": 123,
+    "table_number": "8",
+    "customer_count": 2,
+    "expires_at": "2024-01-01T15:00:00+09:00",
+    "store_id": 1
+  },
+  "message": "席セッションを開始しました"
+}
+```
+
+#### ゲストセッション終了
+```http
+DELETE /api/v1/auth/guest/end
+```
+
+**呼び出しタイミング**
+- **誰が**: スマホアプリ（フロントエンド）
+- **いつ**: ユーザーがサイトを離脚する時、タイムアウト時
+- **目的**: Redisからゲストセッションとカートデータを削除
+
+#### カートクリア
+```http
+DELETE /api/v1/guest/cart
+Authorization: Bearer guest_abc123def456ghi789
+```
+
+**呼び出しタイミング**
+- **誰が**: スマホアプリ（フロントエンド）
+- **いつ**: ユーザーが「カートを空にする」ボタンクリック時
+- **目的**: カート内の全アイテムを削除しカートログに記録
+
+**レスポンス**
+```json
+{
+  "success": true,
+  "data": {
+    "cleared_items": 3,
+    "total_amount_cleared": 2400
+  },
+  "message": "カートをクリアしました"
+}
+```
+
+#### カートアイテム削除
+```http
+DELETE /api/v1/guest/cart/items/{product_id}
+Authorization: Bearer guest_abc123def456ghi789
+```
+
+**呼び出しタイミング**
+- **誰が**: スマホアプリ（フロントエンド）
+- **いつ**: カート画面で特定商品の「削除」ボタンクリック時
+- **目的**: 指定した商品をカートから削除しカートログに記録
+
+**レスポンス**
+```json
+{
+  "success": true,
+  "data": {
+    "removed_product_id": 1,
+    "removed_quantity": 2,
+    "removed_amount": 1600,
+    "remaining_total": 800
+  },
+  "message": "商品をカートから削除しました"
+}
+```
+
+#### 注文詳細取得
+```http
+GET /api/v1/orders/{id}
+```
+
+**呼び出しタイミング**
+- **誰が**: スマホアプリ（フロントエンド）、POS端末
+- **いつ**: 注文完了後の詳細確認時、POSが注文情報を取得する時
+- **目的**: 注文の詳細内容や現在のステータスを取得
+
+#### POS注文一覧取得
+```http
+GET /api/v1/pos/orders
+Authorization: Bearer pos_system_token
+```
+
+**呼び出しタイミング**
+- **誰が**: POS端末（注文管理機能）
+- **いつ**: 注文状況確認時、一覧表示リフレッシュ時
+- **目的**: 店舗内の全注文状況を取得しステータス管理
+
+#### POS注文ステータス更新
+```http
+PUT /api/v1/pos/orders/{id}
+Authorization: Bearer pos_system_token
+```
+
+**呼び出しタイミング**
+- **誰が**: POS端末（注文状況管理機能）
+- **いつ**: 注文ステータス変更時（調理中→提供済み等）
+- **目的**: 注文の進捗状況をクラウドに同期しchange_logsに記録
+
+#### 席セッション延長
+```http
+POST /api/v1/pos/sessions/extend
+Authorization: Bearer pos_system_token
+```
+
+**呼び出しタイミング**
+- **誰が**: POS端末（セッション管理機能）
+- **いつ**: 席の利用時間を延長する必要がある時
+- **目的**: アクティブな席セッションの有効期限を延長
+
+## 6. エラーハンドリング
+
+### 6.1 一般的なエラー
+
+#### バリデーションエラー（422）
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "入力内容に誤りがあります",
+    "details": {
+      "items.0.quantity": [
+        "数量は1以上を指定してください"
+      ],
+      "items.1.product_id": [
+        "指定されたメニューは存在しません"
+      ]
+    }
+  }
+}
+```
+
+#### 認証エラー（401）
+```json
+{
+  "success": false,
+  "error": {
+    "code": "UNAUTHENTICATED", 
+    "message": "認証が必要です"
+  }
+}
+```
+
+#### 権限エラー（403）
+```json
+{
+  "success": false,
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "この操作を実行する権限がありません"
+  }
+}
+```
+
+### 6.2 ゲストセッション固有のエラー
 
 #### セッション期限切れ（401）
 ```json
@@ -811,325 +1119,30 @@ Authorization: Bearer guest_abc123def456ghi789
 }
 ```
 
-## 10. 将来拡張API
+## 7. セキュリティ対策
 
-### 10.1 カートログ分析（将来機能）
+### 7.1 レート制限
 ```
-# 管理画面用 - カート分析
-GET /api/v1/admin/cart-analytics/overview    # カート放棄率等の概要
-GET /api/v1/admin/cart-analytics/products    # 商品別カート統計
-GET /api/v1/admin/cart-analytics/trends      # 時系列トレンド
-GET /api/v1/admin/cart-analytics/funnels     # コンバージョンファネル
-
-# トラブルシューティング用
-GET /api/v1/admin/cart-logs                  # カートログ検索
-GET /api/v1/admin/cart-logs/{guest_token}    # 特定ゲストの操作履歴
-GET /api/v1/admin/cart-logs/errors           # エラーログ一覧
+# レスポンスヘッダー
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 45
+X-RateLimit-Reset: 1704067200
 ```
 
-### 10.2 レコメンデーション機能
+### 7.2 CORS設定
 ```
-GET /api/v1/recommendations/products        # おすすめ商品
-POST /api/v1/analytics/events               # 行動ログ送信
-```
-
-### 10.3 プッシュ通知
-```
-POST /api/v1/notifications/subscribe        # 通知購読
-POST /api/v1/notifications/push             # プッシュ送信
+Access-Control-Allow-Origin: https://example.com
+Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Authorization, X-Request-ID
+Access-Control-Max-Age: 86400
 ```
 
-## 11. 並び替えAPI
-
-### 11.1 汎用ソート更新API
-```http
-PUT /api/v1/admin/sort-order
-Authorization: Bearer {admin_token}
+### 7.3 セキュリティヘッダー
 ```
-
-**リクエスト**
-```json
-{
-  "model": "categories",  // または "products", "options" など
-  "parent_id": 1,  // 親IDが必要な場合（category_productなど）
-  "items": [
-    {"id": 5, "sort_order": 1},
-    {"id": 3, "sort_order": 2},
-    {"id": 7, "sort_order": 3},
-    {"id": 1, "sort_order": 4},
-    {"id": 9, "sort_order": 5}
-  ]
-}
-```
-
-**レスポンス（成功）**
-```json
-{
-  "success": true,
-  "message": "並び順を更新しました",
-  "updated_count": 5
-}
-```
-
-### 11.2 カテゴリ並び替え
-```http
-PUT /api/v1/admin/categories/sort
-Authorization: Bearer {admin_token}
-```
-
-**リクエスト**
-```json
-{
-  "category_ids": [5, 3, 7, 1, 9]  // 新しい順序
-}
-```
-
-### 11.3 カテゴリ内商品並び替え
-```http
-PUT /api/v1/admin/categories/{category_id}/products/sort
-Authorization: Bearer {admin_token}
-```
-
-**リクエスト**
-```json
-{
-  "product_ids": [12, 8, 15, 3, 20]  // 新しい順序
-}
-```
-
-### 11.4 商品オプション並び替え
-```http
-PUT /api/v1/admin/products/{product_id}/options/sort
-Authorization: Bearer {admin_token}
-```
-
-**リクエスト**
-```json
-{
-  "option_ids": [2, 1, 4, 3]  // 新しい順序
-}
-```
-
-### 11.5 商品画像並び替え
-```http
-PUT /api/v1/admin/products/{product_id}/images/sort
-Authorization: Bearer {admin_token}
-```
-
-**リクエスト**
-```json
-{
-  "image_ids": [4, 2, 1, 3]  // 新しい順序
-}
-```
-
-### 11.6 バッチ更新の実装例
-```php
-// app/Http/Controllers/Api/Admin/SortOrderController.php
-public function updateSortOrder(Request $request)
-{
-    $validated = $request->validate([
-        'model' => 'required|in:categories,products,options,images',
-        'parent_id' => 'nullable|integer',
-        'items' => 'required|array',
-        'items.*.id' => 'required|integer',
-        'items.*.sort_order' => 'required|integer|min:1'
-    ]);
-    
-    DB::transaction(function () use ($validated) {
-        foreach ($validated['items'] as $item) {
-            DB::table($validated['model'])
-                ->where('id', $item['id'])
-                ->update(['sort_order' => $item['sort_order']]);
-        }
-    });
-    
-    return response()->json([
-        'success' => true,
-        'message' => '並び順を更新しました',
-        'updated_count' => count($validated['items'])
-    ]);
-}
-```
-
-## 12. POS翻訳サービス
-
-### 11.1 翻訳同期API
-```http
-POST /api/v1/pos/translations/sync
-Authorization: Bearer {pos_token}
-```
-
-**リクエスト**
-```json
-{
-  "translations": {
-    "products": [1, 3, 5],           // 商品ID配列
-    "categories": [1, 2],            // カテゴリID配列  
-    "options": [1, 2, 3]             // オプションID配列
-  },
-  "target_languages": ["en", "zh-TW", "zh-CN", "ko"],
-  "force_update": false,             // 既存翻訳の上書き
-  "timeout": 300                     // タイムアウト（秒）
-}
-```
-
-**レスポンス（成功）**
-```json
-{
-  "success": true,
-  "message": "翻訳完了",
-  "processing_time": "127.3s",
-  "results": {
-    "products": [
-      {
-        "id": 1,
-        "translations": {
-          "en": {"name": "Ramen", "description": "Delicious noodle soup"},
-          "zh-TW": {"name": "拉麵", "description": "美味湯麵"},
-          "zh-CN": {"name": "拉面", "description": "美味汤面"},
-          "ko": {"name": "라멘", "description": "맛있는 국수"}
-        }
-      }
-    ],
-    "categories": [
-      {
-        "id": 1,
-        "translations": {
-          "en": {"name": "Main Dishes"},
-          "zh-TW": {"name": "主食"},
-          "zh-CN": {"name": "主食"},
-          "ko": {"name": "메인 요리"}
-        }
-      }
-    ],
-    "options": [
-      {
-        "id": 1,
-        "translations": {
-          "en": {"title": "Noodle Firmness"},
-          "zh-TW": {"title": "麵條硬度"},
-          "zh-CN": {"title": "面条硬度"},
-          "ko": {"title": "면 굵기"}
-        }
-      }
-    ]
-  }
-}
-```
-
-**レスポンス（エラー時フォールバック）**
-```json
-{
-  "success": false,
-  "message": "翻訳サービスエラー。既存翻訳を使用します",
-  "error": "TRANSLATION_SERVICE_TIMEOUT",
-  "fallback_results": {
-    "products": [
-      {
-        "id": 1,
-        "existing_translations": {
-          "en": {"name": "Ramen", "description": "..."}
-        }
-      }
-    ]
-  }
-}
-```
-
-### 11.2 翻訳システム仕様
-- **外部サービス**: Dify経由で4言語並列翻訳
-- **タイムアウト**: 3-5分（商品数に応じて調整）
-- **制限**: 最大10商品/リクエスト
-- **処理方式**: 全成功 or 全失敗（部分成功なし）
-- **フォールバック**: エラー時は既存翻訳データ返却
-
-### 11.3 翻訳対象フィールド
-- **商品（products）**: name（商品名）、description（商品説明）
-- **カテゴリ（categories）**: name（カテゴリ名）
-- **オプション（options）**: title（オプションタイトル）
-
-## 12. POS認証システム
-
-### 12.1 POSログイン認証API
-```http
-POST /api/v1/pos/auth/login
-Content-Type: application/json
-```
-
-**リクエスト**
-```json
-{
-  "store_id": "store_001",
-  "pos_id": "pos_terminal_001",
-  "password": "secure_pos_password"
-}
-```
-
-**レスポンス（成功）**
-```json
-{
-  "success": true,
-  "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
-  "expires_at": "2024-01-02T12:00:00+09:00",
-  "refresh_before": "2024-01-02T06:00:00+09:00",
-  "store_info": {
-    "store_id": "store_001",
-    "store_name": "サンプル店舗"
-  }
-}
-```
-
-### 12.2 トークン更新API
-```http
-POST /api/v1/pos/auth/refresh
-Authorization: Bearer {current_token}
-```
-
-**レスポンス**
-```json
-{
-  "token": "new_token_string",
-  "expires_at": "2024-01-02T12:00:00+09:00",
-  "refresh_before": "2024-01-02T06:00:00+09:00"
-}
-```
-
-### 12.3 POS認証フロー
-1. **起動時ログイン**: POS起動時に自動的にログインAPI実行
-2. **トークン保存**: 取得したトークンをPOS内部で自動保存
-3. **API利用**: Bearer Token でPOS API呼び出し
-4. **自動更新**: `refresh_before`時刻以降に自動リフレッシュ
-5. **障害回復**: 認証エラー時は自動的に再ログイン
-
-### 12.4 自動更新推奨実装
-- トークンの有効期限：24時間
-- 更新推奨タイミング：期限の6時間前（`refresh_before`）
-- POSシステムは`refresh_before`の時刻以降に自動的にトークンを更新
-- 更新失敗時は5分間隔でリトライ（最大5回）
-- 認証エラー時は自動的に再ログイン実行
-
-### 12.5 セッション延長API（POSからの明示的指示）
-```http
-POST /api/v1/pos/sessions/extend
-Authorization: Bearer {pos_token}
-```
-
-**リクエスト**
-```json
-{
-  "session_id": 123,
-  "hours": 1  // デフォルト1時間延長
-}
-```
-
-**レスポンス**
-```json
-{
-  "session_id": 123,
-  "expires_at": "2024-01-01T16:00:00+09:00",
-  "extended_hours": 1
-}
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+X-XSS-Protection: 1; mode=block
+Strict-Transport-Security: max-age=31536000; includeSubDomains
 ```
 
 ---
