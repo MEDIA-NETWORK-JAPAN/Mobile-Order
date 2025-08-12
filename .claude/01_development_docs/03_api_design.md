@@ -12,12 +12,14 @@
 - **下位互換性**: 最低6ヶ月間は旧バージョンをサポート
 - **非推奨通知**: レスポンスヘッダーで通知
 
-### 1.3 認証方式
+### 1.3 認証方式とセッション管理
+- **POS起点の統一管理**: 全ての席セッションIDはPOS端末で生成
 - **2層認証システム（モバイル）**: 
-  - 第1層: 席セッション（QRコード → 同席者間共有）
+  - 第1層: 席セッション（POS生成 → WebでURL化）
   - 第2層: ゲストセッション（個人識別 + 不正防止）
 - **POS API**: Bearer Token認証（Laravel Sanctum）
 - **管理画面**: Session認証（Laravel Breeze）
+- **障害復旧**: cloud_synced='N'フラグでシンプル管理
 
 ## 2. API命名規則
 
@@ -53,51 +55,86 @@ Authorization: Bearer {token}
 X-Request-ID: {uuid}
 ```
 
-### 3.2 リクエストボディ例
+### 3.2 シンプル化されたAPI体系
+
+#### POS用コアAPI（3種類のみ）
 ```json
-// POST /api/v1/orders（2層認証対応）
+// 1. URL発行リクエスト
+POST /api/pos/request-url
 {
-  "session_id": 123,  // 第1層: 席セッション（同席者共有用）
-  "guest_token": "guest_abc123def456",  // 第2層: ゲスト認証（個人識別用）
-  "device_fingerprint": "browser_chrome_win10_hash123",  // デバイス識別
-  "items": [
-    {
-      "product_id": 1,
-      "quantity": 2,
-      "options": [
-        {
-          "option_id": 1,
-          "values": [1, 2]
-        }
-      ],
-      "notes": "辛さ控えめ"
-    }
-  ]
+  "session_id": "SESSION_POS_20240101_120000_08_001",
+  "table_number": "08"
+}
+→ { "url": "https://mobile-order.com/s/SESSION_POS_xxx" }
+
+// 2. セッション同期（障害復旧時）
+POST /api/pos/sync-sessions
+{
+  "unsynced_sessions": ["SESSION_POS_xxx", "SESSION_POS_yyy"]
+}
+→ { "processed": 2 }
+
+// 3. 注文同期（障害復旧時）
+POST /api/pos/sync-orders
+{
+  "orders": [{ "session_id": "SESSION_POS_xxx", "order_data": {...} }]
+}
+→ { "synced": 10 }
+```
+
+#### モバイル用API（2層認証）
+```json
+// POST /api/v1/orders
+POST /api/mobile/orders
+{
+  "session_id": "SESSION_POS_xxx",  // POS生成のID
+  "guest_token": "guest_abc123def456",
+  "device_fingerprint": "browser_chrome_win10_hash123",
+  "items": [{
+    "product_id": 1,
+    "quantity": 2,
+    "notes": "辛さ控えめ"
+  }]
 }
 ```
 
-### 3.3 クエリパラメータ
-```
-# ページネーション
-GET /api/v1/products?page=1&per_page=20
-
-# フィルタリング
-GET /api/v1/products?category_id=1&availability_status=available
-
-# 複数ステータス指定
-GET /api/v1/products?availability_status[]=available&availability_status[]=preparing
-
-# カテゴリーに紐付けられた商品のみ取得
-GET /api/v1/categories/{id}/products
-
-# ソート
-GET /api/v1/products?sort=price&order=asc
-
-# 検索
-GET /api/v1/products?q=ラーメン
+#### ハンディ端末経由のPOS注文API
+```json
+// POS認証でハンディ注文を代理送信
+POST /api/pos/orders
+Authorization: Bearer pos_system_token_xyz
+{
+  "session_id": "SESSION_POS_xxx",  // POS生成のID
+  "guest_token": "handy_proxy_table08_001",  // 擬似トークン（DB整合性のみ）
+  "device_fingerprint": "handy_device_fingerprint",  // 固定値
+  "items": [{
+    "product_id": 1,
+    "quantity": 2,
+    "notes": "辛さ控えめ"
+  }]
+}
 ```
 
-## 4. レスポンス形式
+### 3.3 API簡略化のメリット
+```
+【旧設計】
+- 20+ APIエンドポイント
+- 複雑なセッション管理
+- 多層の認証フロー
+
+【新設計】
+- 3個のPOSコアAPI + 標準モバイルAPI
+- POS中心の一元管理
+- シンプルな障害復旧
+
+メリット:
+● 実装コスト減
+● テストケース減
+● デバッグ容易
+● 保守性向上
+```
+
+## 4. レスポンス形式とエラーハンドリング
 
 ### 4.1 成功レスポンス
 

@@ -15,10 +15,12 @@
 - **インデックス**: 検索・結合に使用するカラムにインデックス作成
 - **デフォルト値**: 適切なデフォルト値を設定
 
-### 1.3 監査方針
+### 1.3 監査方針と同期管理
 - **タイムスタンプ**: 全テーブルに`created_at`, `updated_at`
 - **ソフトデリート**: 履歴保持が必要なテーブルは`deleted_at`
 - **変更ログ**: 重要なデータ変更は`change_logs`テーブルで追跡
+- **障害復旧**: `cloud_synced`フラグでシンプル管理
+- **POS中心**: 全ての席セッションIDはPOS生成
 
 ## 2. テーブル一覧
 
@@ -29,8 +31,9 @@
 
 ### 2.2 店舗・セッション管理
 - `stores` - 店舗情報
-- `sessions` - 席管理・QRコードセッション（DB管理、永続化が必要）
-- **ゲストセッション** - Redisで管理（一時的、guest_session:{token}形式）
+- `sessions` - 席管理・POS生成セッションID管理
+- **ゲストセッション** - Redisで管理（guest_session:{token}形式）
+- **障害復旧** - FireBird側の`cloud_synced`フラグで管理
 
 ### 2.3 商品・メニュー管理
 - `products` - 商品マスター（メイン商品・オプション商品を統一管理）
@@ -100,27 +103,29 @@ CREATE TABLE stores (
 ) ENGINE=InnoDB COMMENT='店舗';
 ```
 
-### 3.3 sessions（セッション・席管理）
+### 3.3 sessions（POS生成セッション管理）
 ```sql
 CREATE TABLE sessions (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    session_id VARCHAR(100) NOT NULL UNIQUE COMMENT 'POS生成セッションID (SESSION_POS_xxx)',
     store_id BIGINT UNSIGNED NOT NULL COMMENT '店舗ID',
-    qr_code VARCHAR(100) NOT NULL UNIQUE COMMENT 'QRコード',
-    table_number VARCHAR(50) NULL COMMENT 'テーブル番号',
+    table_number VARCHAR(50) NOT NULL COMMENT 'テーブル番号',
     customer_count INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '利用人数',
     status ENUM('active', 'expired', 'completed') NOT NULL DEFAULT 'active' COMMENT 'ステータス',
     expires_at TIMESTAMP NOT NULL COMMENT '有効期限',
     started_at TIMESTAMP NULL COMMENT '開始日時',
     completed_at TIMESTAMP NULL COMMENT '完了日時',
+    pos_generated BOOLEAN NOT NULL DEFAULT TRUE COMMENT 'POS生成フラグ',
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
     PRIMARY KEY (id),
-    UNIQUE KEY uk_sessions_qr_code (qr_code),
+    UNIQUE KEY uk_sessions_session_id (session_id),
     INDEX idx_sessions_store_id (store_id),
+    INDEX idx_sessions_table_number (table_number),
     INDEX idx_sessions_status (status),
     INDEX idx_sessions_expires_at (expires_at),
     FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE RESTRICT
-) ENGINE=InnoDB COMMENT='セッション・席管理';
+) ENGINE=InnoDB COMMENT='POS生成セッション管理';
 ```
 
 ### 3.4 products（商品マスター）
@@ -280,6 +285,13 @@ CREATE TABLE tax_rates (
 1. **席セッション（session_id）**: 同席者間での注文履歴共有
 2. **ゲストセッション（guest_token + device_fingerprint）**: 個人識別・不正アクセス防止
 
+#### ハンディ端末の擬似トークン対応
+ハンディ端末からの注文では、個人識別は不要ですがDB整合性のため擬似トークンを使用：
+- **擬似ゲストトークン**: `handy_proxy_table{N}_{increment}` 形式
+- **擬似フィンガープリント**: `handy_device_fingerprint` 固定値
+- **用途**: DB NOT NULL制約対応のみ（認証機能なし）
+- **API認証**: POS認証トークンを使用（擬似トークンは無関係）
+
 ```sql
 CREATE TABLE orders (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -430,17 +442,18 @@ CREATE TABLE system_settings (
 ) ENGINE=InnoDB COMMENT='システム設定';
 ```
 
-## 4. インデックス戦略
+## 4. インデックス戦略と障害復旧
 
-### 4.1 主要検索パターン
+### 4.1 主要検索パターン（更新版）
 - **ユーザー検索**: email, role, store_id
 - **商品検索**: store_id, availability_status, is_active
 - **カテゴリ検索**: store_id, is_active
 - **注文検索**: store_id, session_id, status, ordered_at
-- **セッション検索**: qr_code, store_id, status, expires_at
+- **セッション検索**: session_id, store_id, table_number, status
+- **障害復旧検索**: cloud_syncedフラグ（FireBird側）
 - **カートログ検索**: guest_token, product_id, action, created_at
 
-### 4.2 複合インデックス
+### 4.2 複合インデックス（更新版）
 ```sql
 -- 注文検索用
 CREATE INDEX idx_orders_store_status_date ON orders(store_id, status, ordered_at);
@@ -448,15 +461,18 @@ CREATE INDEX idx_orders_store_status_date ON orders(store_id, status, ordered_at
 -- 商品検索用
 CREATE INDEX idx_products_store_status_active ON products(store_id, availability_status, is_active);
 
--- カテゴリ別商品検索用
-CREATE INDEX idx_category_product_category_sort ON category_product(category_id, sort_order);
+-- POS生成セッション検索用
+CREATE INDEX idx_sessions_session_id_status ON sessions(session_id, status);
+CREATE INDEX idx_sessions_table_store ON sessions(table_number, store_id);
 
 -- 変更ログ同期用
 CREATE INDEX idx_change_logs_sync ON change_logs(is_synced, created_at);
 
 -- カートログ分析用
 CREATE INDEX idx_cart_logs_token_date ON cart_logs(guest_token, created_at);
-CREATE INDEX idx_cart_logs_product_action_date ON cart_logs(product_id, action, created_at);
+
+-- 障害復旧用（FireBird側）
+-- CREATE INDEX idx_order_management_cloud_synced ON order_management(cloud_synced);
 ```
 
 ## 5. パフォーマンス考慮事項
@@ -478,6 +494,20 @@ ALTER TABLE change_logs PARTITION BY RANGE (YEAR(created_at)*100 + MONTH(created
 - **images**: 商品削除時に連動して整理
 - **orders**: 1年経過後にアーカイブテーブルに移動
 - **sessions**: 期限切れ後1週間でクリーンアップ
+
+## 6. データ整合性と障害復旧
+
+### 6.0 障害復旧のデータ管理
+```sql
+-- FireBird側（POS端末）の同期管理
+-- order_managementテーブルに追加
+cloud_synced CHAR(1) DEFAULT 'Y' -- 'Y':同期済み 'N':未同期
+
+-- 障害時の動作:
+-- 1. スマホ注文: 完全不可
+-- 2. ハンディ注文: cloud_synced='N'で記録
+-- 3. 復旧時: cloud_synced='N'のデータを一括同期
+```
 
 ## 6. データ整合性
 

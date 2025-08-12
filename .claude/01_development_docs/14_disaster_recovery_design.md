@@ -9,456 +9,289 @@
 - **クラウドサーバー完全ダウン**
 - **ネットワーク障害**（オンプレ→クラウド間通信不通）
 
-### 1.3 システム構成（正しい理解）
+### 1.3 システム構成
 ```
 【店舗内システム】
 ハンディ端末(Android) ←→ POS端末(Windows+Delphi+FireBird) ←→ クラウド(Laravel+MySQL)
      ↑                            ↑                                    ↑
-  注文入力のみ                データ管理中枢                    Web注文受付
- クラウド通信なし              唯一のクラウド通信                 POS連携のみ
+  注文入力のみ             セッションID生成元                   セッション受信・URL発行
+ クラウド通信なし           データ管理中枢                      POS連携・同期
 ```
 
-### 1.4 基本方針
+### 1.4 基本方針（更新版）
 ```
-平常時: POS端末 ⟷ クラウド（ポーリング同期）
-障害時: POS端末単独運用（ハンディ注文継続）
-復旧時: POS端末 → クラウド（未同期データ送信）
+【統一原則】
+- 全ての席セッションIDはPOS端末で生成
+- WebサーバーはセッションIDを受け取りURL発行
+- 障害復旧は cloud_synced='N' フラグで判断
+
+平常時: POS(セッションID生成) → Web(URL発行) → スマホ注文
+障害時: POS単独運用（ハンディ注文継続、cloud_synced='N'）
+復旧時: POS → Web（未同期データのシンプル同期）
 ```
 
-## 2. 障害時の動作パターン
+## 2. 通常運用フロー（更新版）
 
-### 2.1 正常時の動作
-
-#### スマホ注文フロー
+### 2.1 スマホ注文フロー
 ```
-1. お客様スマホ → クラウド → ordersテーブル
-2. POS端末 → change_logsポーリング → 新規注文検知
-3. POS端末 → FireBird order_managementテーブルに書き込み
-4. 厨房印字・調理・提供・会計
-```
-
-#### ハンディ注文フロー
-```
-1. ハンディ端末 → POS端末 → FireBird order_managementテーブルに書き込み
-2. 厨房印字・調理・提供・会計
+1. POS: 席番号入力 → セッションID生成(SESSION_POS_xxx)
+2. POS → Web: URL発行リクエスト
+3. Web: セッションDB登録 → URL生成
+4. POS: QRコード印刷
+5. お客様: スマホで注文 → Web → POS
+6. POS: FireBird記録(cloud_synced='Y')
+7. 厨房印字・調理・提供・会計
 ```
 
-### 2.2 障害時の動作
+### 2.2 ハンディ注文フロー
+```
+1. ハンディ → POS: 注文データ受信
+2. POS: セッションID生成(SESSION_POS_xxx)
+3. POS → Web: 注文データ同期
+4. POS: FireBird記録(cloud_synced='Y')
+5. 厨房印字・調理・提供・会計
+```
+
+### 2.3 障害時の動作
 
 #### 影響を受ける処理
 ```
-❌ スマホ注文: クラウドが落ちているため不可
-❌ QRコード生成: クラウド連携が必要なため不可
+❌ URL発行: Webサーバー応答なし → QRコード印刷不可
+❌ スマホ注文: クラウド接続不可
+❌ 注文同期: POS → Web通信不可
 ```
 
 #### 影響を受けない処理
 ```
+✅ セッションID生成: POS端末で継続
 ✅ ハンディ注文: POS端末直結のため正常動作
 ✅ 厨房処理: FireBirdベースなので正常動作  
 ✅ 会計処理: ローカル完結なので正常動作
 ```
 
-#### 代替運用
+#### 障害中の記録
 ```
-お客様: 「スマホで注文したい」
-スタッフ: 「システム都合でお伺いします」
-        ↓
-    ハンディで代行注文
-        ↓
-   通常の厨房・会計フロー
+- セッションID: POS生成継続
+- 注文データ: FireBird記録(cloud_synced='N')
+- 営業: ハンディのみで継続
+- 顧客対応: スタッフが代行注文
 ```
 
-## 3. 実装設計（最小変更）
+## 3. 障害復旧の実装設計
 
-### 3.1 FireBirdテーブル変更
+### 3.1 システムモード管理
+```
+【3つの動作モード】
+1. 通常運用モード: Web正常、スマホ注文可能
+2. 障害発生モード: Web停止、ハンディのみ
+3. 回復モード: 同期処理中、既存セッションのみ
+```
 
-#### 既存テーブルへの最小変更
+### 3.2 FireBirdテーブル設計
 ```sql
--- 注文管理テーブルに1つのフラグ追加のみ
-ALTER TABLE order_management ADD cloud_synced CHAR(1) DEFAULT 'Y';
--- Y = 同期済み（スマホ注文 or 正常時ハンディ注文）
--- N = 未同期（障害時ハンディ注文）
-
-CREATE INDEX idx_order_management_cloud_synced ON order_management (cloud_synced);
-```
-
-### 3.2 Delphiでの実装
-
-#### 障害検知
-```pascal
-// POS端末でのヘルスチェック（1分間隔）
-procedure TMainForm.TimerHealthCheckTimer(Sender: TObject);
-begin
-  if TestCloudConnection then
-  begin
-    if not FCloudOnline then
-    begin
-      FCloudOnline := True;
-      StatusPanel.Text := '正常稼働';
-      TimerSync.Enabled := True; // 同期開始
-    end;
-  end else
-  begin
-    if FCloudOnline then
-    begin
-      FCloudOnline := False;
-      StatusPanel.Text := 'オフライン';
-      WriteLog('クラウド接続断検知');
-    end;
-  end;
-end;
-
-function TestCloudConnection: Boolean;
-var
-  HTTP: THTTPClient;
-begin
-  try
-    HTTP := THTTPClient.Create;
-    try
-      Result := HTTP.Get('https://cloud-api.mobile-order.com/health').StatusCode = 200;
-    finally
-      HTTP.Free;
-    end;
-  except
-    Result := False;
-  end;
-end;
-```
-
-#### ハンディ注文処理
-```pascal
-// ハンディからの注文受信（既存処理にフラグ追加のみ）
-procedure ReceiveHandyOrder(TableNo, ItemName: string; Amount: Currency);
-var
-  Query: TFDQuery;
-begin
-  Query := TFDQuery.Create(nil);
-  try
-    Query.Connection := FDConnection;
-    Query.SQL.Text := 
-      'INSERT INTO order_management (table_number, item_name, total_amount, cloud_synced) ' +
-      'VALUES (:table, :item, :amount, :synced)';
-      
-    Query.ParamByName('table').AsString := TableNo;
-    Query.ParamByName('item').AsString := ItemName;
-    Query.ParamByName('amount').AsCurrency := Amount;
-    
-    // 障害時は未同期マーク
-    if FCloudOnline then
-      Query.ParamByName('synced').AsString := 'Y'
-    else
-      Query.ParamByName('synced').AsString := 'N';
-      
-    Query.ExecSQL;
-    
-    // 既存の厨房印字処理
-    PrintToKitchen(Query.Connection.GetLastAutoGenValue);
-    
-  finally
-    Query.Free;
-  end;
-end;
-```
-
-#### 復旧時の同期処理
-```pascal
-// 復旧時の自動同期（10分間隔）
-procedure TMainForm.TimerSyncTimer(Sender: TObject);
-var
-  UnsyncedCount: Integer;
-begin
-  if FCloudOnline then
-  begin
-    UnsyncedCount := GetUnsyncedOrderCount;
-    if UnsyncedCount > 0 then
-    begin
-      StatusPanel.Text := Format('同期中...(%d件)', [UnsyncedCount]);
-      if SyncUnsyncedOrders then
-        StatusPanel.Text := '同期完了'
-      else
-        StatusPanel.Text := '同期エラー';
-    end else
-    begin
-      StatusPanel.Text := '正常稼働';
-      TimerSync.Enabled := False; // 同期完了
-    end;
-  end;
-end;
-
-function GetUnsyncedOrderCount: Integer;
-var
-  Query: TFDQuery;
-begin
-  Query := TFDQuery.Create(nil);
-  try
-    Query.Connection := FDConnection;
-    Query.SQL.Text := 'SELECT COUNT(*) as cnt FROM order_management WHERE cloud_synced = ''N''';
-    Query.Open;
-    Result := Query.FieldByName('cnt').AsInteger;
-  finally
-    Query.Free;
-  end;
-end;
-
-function SyncUnsyncedOrders: Boolean;
-var
-  Query: TFDQuery;
-  OrdersArray: TJSONArray;
-  SyncData: TJSONObject;
-  HTTP: THTTPClient;
-  Response: IHTTPResponse;
-begin
-  Result := False;
+-- 注文管理テーブルの同期フラグ
+order_management テーブル:
+  cloud_synced CHAR(1) DEFAULT 'Y'
+  -- 'Y' = 同期済み（通常時）
+  -- 'N' = 未同期（障害時）
   
-  // 未同期注文を取得
-  Query := TFDQuery.Create(nil);
-  try
-    Query.Connection := FDConnection;
-    Query.SQL.Text := 
-      'SELECT order_id, table_number, item_name, total_amount, created_at ' +
-      'FROM order_management WHERE cloud_synced = ''N''';
-    Query.Open;
-    
-    if Query.RecordCount = 0 then
-    begin
-      Result := True;
-      Exit;
-    end;
-    
-    // JSON配列作成
-    OrdersArray := TJSONArray.Create;
-    try
-      while not Query.Eof do
-      begin
-        with TJSONObject.Create do
-        begin
-          AddPair('order_id', Query.FieldByName('order_id').AsString);
-          AddPair('table_number', Query.FieldByName('table_number').AsString);
-          AddPair('item_name', Query.FieldByName('item_name').AsString);
-          AddPair('total_amount', TJSONNumber.Create(Query.FieldByName('total_amount').AsCurrency));
-          AddPair('ordered_at', DateTimeToISO8601(Query.FieldByName('created_at').AsDateTime));
-          AddPair('status', 'completed');
-          
-          OrdersArray.AddElement(Self);
-        end;
-        Query.Next;
-      end;
-      
-      // API送信
-      SyncData := TJSONObject.Create;
-      try
-        SyncData.AddPair('sync_batch_id', FormatDateTime('yyyymmdd_hhnnss', Now));
-        SyncData.AddPair('orders', OrdersArray);
-        
-        HTTP := THTTPClient.Create;
-        try
-          Response := HTTP.Post('https://cloud-api.mobile-order.com/api/v1/pos/sync-handy-orders',
-                               TStringStream.Create(SyncData.ToString),
-                               nil, TNetHeaders.Create(TNetHeader.Create('Content-Type', 'application/json')));
-          
-          if Response.StatusCode = 200 then
-          begin
-            MarkOrdersAsSynced;
-            Result := True;
-          end;
-          
-        finally
-          HTTP.Free;
-        end;
-        
-      finally
-        SyncData.Free;
-      end;
-      
-    finally
-      OrdersArray.Free;
-    end;
-    
-  finally
-    Query.Free;
-  end;
-end;
-
-procedure MarkOrdersAsSynced;
-var
-  Query: TFDQuery;
-begin
-  Query := TFDQuery.Create(nil);
-  try
-    Query.Connection := FDConnection;
-    Query.SQL.Text := 'UPDATE order_management SET cloud_synced = ''Y'' WHERE cloud_synced = ''N''';
-    Query.ExecSQL;
-  finally
-    Query.Free;
-  end;
-end;
+CREATE INDEX idx_order_management_cloud_synced 
+ON order_management (cloud_synced);
 ```
 
-## 4. Laravel側の実装
+### 3.3 障害検知と復旧処理
 
-### 4.1 ハンディ注文同期API
+#### 障害検知（30秒間隔）
+```
+ヘルスチェック判定:
+- 3回連続タイムアウト → 障害認定
+- 応答時間 > 5秒 → 警告
+- HTTPステータス ≠ 200 → 障害認定
 
-#### ルート定義
-```php
-// routes/api.php
-Route::post('/pos/sync-handy-orders', [PosController::class, 'syncHandyOrders'])
-    ->middleware(['auth:sanctum', 'throttle:pos-api']);
+処理:
+1. 障害検知 → オフラインモード切替
+2. URL発行機能無効化
+3. 注文記録時 cloud_synced='N' 設定
+4. 画面表示「オフラインモード」
 ```
 
-#### コントローラー実装
-```php
-// app/Http/Controllers/Api/PosController.php
-public function syncHandyOrders(Request $request)
-{
-    $validated = $request->validate([
-        'sync_batch_id' => 'required|string',
-        'orders' => 'required|array|min:1',
-        'orders.*.order_id' => 'required|string',
-        'orders.*.table_number' => 'required|string',
-        'orders.*.item_name' => 'required|string',
-        'orders.*.total_amount' => 'required|numeric|min:0',
-        'orders.*.ordered_at' => 'required|date',
-        'orders.*.status' => 'required|in:completed'
-    ]);
-    
-    $syncedCount = 0;
-    $errors = [];
-    
-    DB::beginTransaction();
-    try {
-        foreach ($validated['orders'] as $orderData) {
-            try {
-                $this->createHandyProxyOrder($orderData);
-                $syncedCount++;
-            } catch (Exception $e) {
-                $errors[] = [
-                    'order_id' => $orderData['order_id'],
-                    'error' => $e->getMessage()
-                ];
-            }
-        }
-        
-        if (empty($errors)) {
-            DB::commit();
-            Log::info('Handy orders synced successfully', [
-                'batch_id' => $validated['sync_batch_id'],
-                'count' => $syncedCount
-            ]);
-            
-            return response()->json([
-                'success' => true,
-                'synced_count' => $syncedCount,
-                'batch_id' => $validated['sync_batch_id']
-            ]);
-        } else {
-            DB::rollback();
-            return response()->json([
-                'success' => false,
-                'synced_count' => $syncedCount,
-                'errors' => $errors
-            ], 422);
-        }
-        
-    } catch (Exception $e) {
-        DB::rollback();
-        Log::error('Handy orders sync failed', [
-            'batch_id' => $validated['sync_batch_id'],
-            'error' => $e->getMessage()
-        ]);
-        
-        return response()->json([
-            'success' => false,
-            'error' => 'データベースエラーが発生しました'
-        ], 500);
-    }
-}
+#### 復旧処理
+```
+接続回復検知:
+1. ヘルスチェック成功 → 回復モード移行
+2. 未同期データ送信開始
+3. 進捗表示「同期中...(残り X件)」
+4. 全同期完了 → 通常モード復帰
+```
 
-private function createHandyProxyOrder(array $orderData): Order
-{
-    // 1. 疑似セッション作成（存在しない場合）
-    $session = Session::firstOrCreate([
-        'qr_code' => 'HANDY_TABLE_' . $orderData['table_number'],
-        'store_id' => auth()->user()->store_id
-    ], [
-        'table_number' => $orderData['table_number'],
-        'customer_count' => 1,
-        'status' => 'completed',
-        'expires_at' => now()->addDay(),
-        'started_at' => Carbon::parse($orderData['ordered_at']),
-        'completed_at' => now()
-    ]);
-    
-    // 2. 疑似ゲスト情報生成
-    $guestToken = 'handy_' . $orderData['order_id'];
-    $deviceFingerprint = 'pos_handy_table_' . $orderData['table_number'];
-    
-    // 3. 重複チェック
-    $existingOrder = Order::where('order_number', 'HANDY_' . $orderData['order_id'])->first();
-    if ($existingOrder) {
-        throw new Exception('Order already exists: ' . $orderData['order_id']);
-    }
-    
-    // 4. 注文作成
-    $order = Order::create([
-        'store_id' => auth()->user()->store_id,
-        'session_id' => $session->id,
-        'guest_token' => $guestToken,
-        'device_fingerprint' => $deviceFingerprint,
-        'order_number' => 'HANDY_' . $orderData['order_id'],
-        'status' => $orderData['status'],
-        'total_amount' => $orderData['total_amount'],
-        'ordered_at' => Carbon::parse($orderData['ordered_at']),
-        'completed_at' => now(),
-        'notes' => 'ハンディ代行注文（オフライン同期）'
-    ]);
-    
-    // 5. 簡単な注文明細
-    OrderItem::create([
-        'order_id' => $order->id,
-        'product_id' => $this->findOrCreateSimpleProduct($orderData['item_name']),
-        'quantity' => 1,
-        'unit_price' => $orderData['total_amount'],
-        'total_price' => $orderData['total_amount'],
-        'notes' => 'ハンディ注文'
-    ]);
-    
-    // 6. 変更ログ記録
-    ChangeLog::create([
-        'entity_type' => 'orders',
-        'entity_id' => $order->id,
-        'action' => 'created',
-        'sync_source' => 'onpremise',
-        'user_type' => 'handy_system',
-        'user_id' => auth()->id()
-    ]);
-    
-    return $order;
-}
+### 3.4 注文処理の実装
 
-private function findOrCreateSimpleProduct(string $itemName): int
+#### 通常時の処理
+```
+スマホ注文:
+1. Web → POS: 注文データ受信
+2. FireBird記録: cloud_synced='Y'
+3. 厨房印字
+
+ハンディ注文:
+1. ハンディ → POS: 注文データ
+2. POS → Web: 同期送信
+3. 成功時: cloud_synced='Y'
+4. 厨房印字
+```
+
+#### 障害時の処理
+```
+ハンディ注文のみ:
+1. ハンディ → POS: 注文データ
+2. FireBird記録: cloud_synced='N'
+3. Web同期スキップ
+4. 厨房印字（通常通り）
+```
+
+## 4. 障害復旧同期フロー（最終版）
+
+### 4.1 同期フェーズ
+```
+【Phase 1: 未同期セッション送信】
+POS → Web
+- cloud_synced='N' のセッションIDリスト送信
+
+【Phase 2: セッション差分処理】
+Web側で自動処理
+- Web側のみ存在 → 退席処理
+- POS側のみ存在 → 新規登録
+- 両方に存在 → スキップ
+
+【Phase 3: 注文データ同期】
+POS → Web
+- cloud_synced='N' の全注文データ送信
+
+【Phase 4: 同期完了】
+- cloud_synced='Y' 更新
+- 通常運用再開
+```
+
+### 4.2 シンプル同期API
+
+#### 1. セッション同期
+POST /api/pos/sync-sessions
+```json
 {
-    // 商品名で検索、なければ「その他」商品として登録
-    $product = Product::where('name', $itemName)
-        ->where('store_id', auth()->user()->store_id)
-        ->first();
-        
-    if (!$product) {
-        $product = Product::create([
-            'store_id' => auth()->user()->store_id,
-            'code' => 'HANDY_' . Str::slug($itemName),
-            'name' => $itemName,
-            'description' => 'ハンディ注文商品',
-            'price' => 0, // 価格は注文時に決定
-            'tax_in_price' => 0,
-            'tax_type' => 'standard',
-            'availability_status' => 'available',
-            'is_active' => true
-        ]);
-    }
-    
-    return $product->id;
+  "unsynced_sessions": [
+    "SESSION_POS_20240101_140000_12_001",
+    "SESSION_POS_20240101_141500_15_001"
+  ]
 }
 ```
+→ Web側で差分検出・処理
+
+#### 2. 注文同期  
+POST /api/pos/sync-orders
+```json
+{
+  "orders": [
+    {
+      "session_id": "SESSION_POS_xxx",
+      "order_data": {...}
+    }
+  ]
+}
+```
+→ 成功時にcloud_synced='Y'更新
+
+#### 3. URL発行
+POST /api/pos/request-url
+```json
+{
+  "session_id": "SESSION_POS_xxx",
+  "table_number": "08"
+}
+```
+→ URL文字列のみ返却
+
+### 4.3 実装の特徴
+
+#### シンプル化のメリット
+```
+- 既存カラムのみ使用（cloud_syncedフラグ）
+- APIは3種類のみ
+- POS起点の一元管理
+- 状態はデータから導出
+- エラー処理が単純
+```
+
+#### データの一貫性
+```
+- cloud_synced='N' が唯一の判断基準
+- セッションIDは必ずPOS生成
+- Webは受け取りのみ
+- 全データが最終的に同期される
+```
+
+## 5. 運用シナリオ
+
+### 5.1 障害発生から復旧まで
+```
+12:00 障害発生
+      ↓
+      POS: オフラインモード
+      スタッフ: ハンディのみで対応
+      ↓
+12:00-14:30 障害中
+      ハンディ注文: 25件(cloud_synced='N')
+      営業継続: 通常通り
+      ↓
+14:30 復旧開始
+      POS: 回復モード
+      ↓
+14:32 同期完了
+      25件全て同期済み
+      ↓
+14:35 通常運用再開
+      URL発行再開
+      スマホ注文可能
+```
+
+### 5.2 メリットと効果
+
+#### 運用面
+```
+● 営業継続性: 障害時も売上機会损失なし
+● 顧客満足: スタッフ代行で運用継続
+● データ完全性: 全注文が確実に同期
+● 自動復旧: 手動介入最小限
+```
+
+#### 技術面
+```
+● シンプル設計: cloud_syncedフラグのみ
+● 低コスト: 既存テーブル流用
+● 高速同期: バッチ処理で効率化
+● 保守性: 状態管理が明確
+```
+
+#### ビジネス面
+```
+● 信頼性向上: 障害に強いシステム
+● 競争優位: 継続運用能力
+● リスク軽減: シングルポイント障害回避
+● コスト削減: 高額な冗長化不要
+```
+
+---
+
+## まとめ
+
+この障害復旧設計により、**最小限の変更で最大限の効果**を実現できます：
+
+- **シンプル**: POS中心の一元管理
+- **確実**: 全データが確実に同期  
+- **低コスト**: 既存テーブル流用で実装可能
+- **運用容易**: 自動化により運用負荷最小限
+- **拡張可能**: 将来的な機能追加にも対応
+
+実際のPOS環境（Delphi + FireBird）の制約を考慮し、現実的で実装しやすい設計となっています。
 
 ## 5. 具体的な障害復旧シナリオ
 
