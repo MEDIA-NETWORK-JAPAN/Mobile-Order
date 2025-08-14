@@ -1,5 +1,30 @@
 # データベース設計書
 
+## 📚 目次
+
+- [1. 設計方針](#1-設計方針)
+  - [1.1 基本方針](#11-基本方針)
+  - [1.2 制約方針](#12-制約方針)
+  - [1.3 監査方針と同期管理](#13-監査方針と同期管理)
+- [2. テーブル一覧](#2-テーブル一覧)
+  - [2.1 認証・ユーザー管理](#21-認証ユーザー管理)
+  - [2.2 店舗・セッション管理](#22-店舗セッション管理)
+  - [2.3 商品・メニュー管理](#23-商品メニュー管理)
+  - [2.4 注文管理](#24-注文管理)
+  - [2.5 カート管理](#25-カート管理)
+  - [2.6 システム管理](#26-システム管理)
+- [3. テーブル詳細設計](#3-テーブル詳細設計)
+  - [3.1 users（ユーザー）](#31-usersユーザー)
+  - [3.2 stores（店舗）](#32-stores店舗)
+  - [3.3 sessions（セッション管理）](#33-sessionsセッション管理)
+  - [3.4 products（商品マスター）](#34-products商品マスター)
+  - [3.5 categories（商品カテゴリマスター）](#35-categories商品カテゴリマスター)
+  - [3.6 category_product（商品カテゴリ紐付け）](#36-category_product商品カテゴリ紐付け)
+  - [3.7 options（商品オプションマスター）](#37-options商品オプションマスター)
+  - [3.8 product_to_options（商品とオプションの紐付け）](#38-product_to_options商品とオプションの紐付け)
+
+---
+
 ## 1. 設計方針
 
 ### 1.1 基本方針
@@ -87,6 +112,7 @@ CREATE TABLE users (
 ```sql
 CREATE TABLE stores (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    code VARCHAR(50) NOT NULL UNIQUE COMMENT '店舗コード（URL識別用）',
     name VARCHAR(255) NOT NULL COMMENT '店舗名',
     description TEXT NULL COMMENT '店舗説明',
     phone VARCHAR(20) NULL COMMENT '電話番号',
@@ -99,6 +125,7 @@ CREATE TABLE stores (
     updated_at TIMESTAMP NULL,
     deleted_at TIMESTAMP NULL,
     PRIMARY KEY (id),
+    UNIQUE KEY uk_stores_code (code),
     INDEX idx_stores_is_active (is_active)
 ) ENGINE=InnoDB COMMENT='店舗';
 ```
@@ -110,7 +137,7 @@ CREATE TABLE sessions (
     session_id VARCHAR(100) NOT NULL UNIQUE COMMENT 'セッションID (SESSION_POS_xxx形式、POS端末のみ生成)',
     store_id BIGINT UNSIGNED NOT NULL COMMENT '店舗ID',
     table_number VARCHAR(50) NOT NULL COMMENT 'テーブル番号',
-    customer_count INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '利用人数',
+    customer_count INT UNSIGNED NULL COMMENT '利用人数（未設定時はNULL）',
     status ENUM('active', 'expired', 'completed') NOT NULL DEFAULT 'active' COMMENT 'ステータス',
     expires_at TIMESTAMP NOT NULL COMMENT '有効期限',
     started_at TIMESTAMP NULL COMMENT '開始日時',
@@ -135,15 +162,16 @@ CREATE TABLE products (
     code VARCHAR(45) NOT NULL COMMENT 'POS商品ID',
     name VARCHAR(255) NOT NULL COMMENT '商品名',
     description TEXT NULL COMMENT '商品説明',
-    price DECIMAL(10,2) NOT NULL COMMENT '価格（税抜）',
-    tax_in_price DECIMAL(10,2) NOT NULL COMMENT '税込価格',
-    cost DECIMAL(10,2) NULL COMMENT '原価',
+    price INT NOT NULL COMMENT '価格（税抜、円）',
+    tax_in_price INT NOT NULL COMMENT '税込価格（円）',
+    cost INT NULL COMMENT '原価（円）',
     tax_type ENUM('standard', 'reduced', 'exempt', 'non_taxable') NOT NULL COMMENT '税区分',
     availability_status ENUM('available', 'sold_out', 'not_arrived', 'preparing') NOT NULL DEFAULT 'available' COMMENT '提供状態',
     availability_message VARCHAR(255) NULL COMMENT '提供状態メッセージ',
     expected_available_time TIME NULL COMMENT '提供可能予定時刻',
     translations JSON NULL COMMENT '多言語翻訳（JSON）',
     image_url VARCHAR(500) NULL COMMENT 'メイン画像URL',
+    sort_order INT NOT NULL DEFAULT 0 COMMENT 'ソート順',
     is_active BOOLEAN NOT NULL DEFAULT TRUE COMMENT 'アクティブフラグ',
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
@@ -153,6 +181,7 @@ CREATE TABLE products (
     INDEX idx_products_store_id (store_id),
     INDEX idx_products_availability_status (availability_status),
     INDEX idx_products_is_active (is_active),
+    INDEX idx_products_sort_order (sort_order),
     FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB COMMENT='商品マスター';
 ```
@@ -299,8 +328,8 @@ CREATE TABLE orders (
     guest_token VARCHAR(255) NOT NULL COMMENT 'ゲストトークン（個人識別・不正防止用）',
     device_fingerprint VARCHAR(255) NOT NULL COMMENT 'デバイス識別（不正アクセス排除用）',
     order_number VARCHAR(50) NOT NULL UNIQUE COMMENT '注文番号',
-    status ENUM('pending', 'confirmed', 'preparing', 'ready', 'completed', 'cancelled') NOT NULL DEFAULT 'pending' COMMENT '注文ステータス',
-    total_amount DECIMAL(10,2) NOT NULL COMMENT '合計金額',
+    status ENUM('pending', 'preparing', 'completed', 'cancelled') NOT NULL DEFAULT 'pending' COMMENT '注文ステータス',
+    total_amount INT NOT NULL COMMENT '合計金額（円）',
     memo TEXT NULL COMMENT '備考メモ',
     ordered_at TIMESTAMP NOT NULL COMMENT '注文日時',
     confirmed_at TIMESTAMP NULL COMMENT '確認日時',
@@ -328,8 +357,8 @@ CREATE TABLE order_items (
     order_id BIGINT UNSIGNED NOT NULL COMMENT '注文ID',
     product_id BIGINT UNSIGNED NOT NULL COMMENT '商品ID',
     quantity INT UNSIGNED NOT NULL COMMENT '数量',
-    unit_price DECIMAL(10,2) NOT NULL COMMENT '単価',
-    total_price DECIMAL(10,2) NOT NULL COMMENT '小計',
+    unit_price INT NOT NULL COMMENT '単価（円）',
+    total_price INT NOT NULL COMMENT '小計（円）',
     memo TEXT NULL COMMENT '備考メモ',
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
@@ -358,8 +387,8 @@ CREATE TABLE order_item_options (
     quantity INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '数量',
     option_name VARCHAR(255) NOT NULL COMMENT 'オプション名（スナップショット）',
     product_name VARCHAR(255) NOT NULL COMMENT '選択肢名（スナップショット）',
-    unit_price DECIMAL(10,2) NOT NULL COMMENT '単価（スナップショット）',
-    total_price DECIMAL(10,2) NOT NULL COMMENT '小計（数量×単価）',
+    unit_price INT NOT NULL COMMENT '単価（スナップショット、円）',
+    total_price INT NOT NULL COMMENT '小計（数量×単価、円）',
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
     PRIMARY KEY (id),
@@ -381,9 +410,9 @@ CREATE TABLE cart_logs (
     action ENUM('add', 'remove', 'update', 'clear') NOT NULL COMMENT 'カート操作',
     product_id BIGINT UNSIGNED NOT NULL COMMENT '商品ID',
     quantity INT UNSIGNED NOT NULL COMMENT '数量（削除時は削除した数を記録）',
-    unit_price DECIMAL(10,2) NOT NULL COMMENT '操作時の単価',
+    unit_price INT NOT NULL COMMENT '操作時の単価（円）',
     options JSON NULL COMMENT '選択オプション（シンプルな配列）',
-    cart_total DECIMAL(10,2) NOT NULL COMMENT '操作後のカート合計金額',
+    cart_total INT NOT NULL COMMENT '操作後のカート合計金額（円）',
     is_success BOOLEAN NOT NULL DEFAULT TRUE COMMENT '操作成功フラグ',
     error_code VARCHAR(50) NULL COMMENT 'エラーコード（失敗時のみ）',
     error_message VARCHAR(255) NULL COMMENT 'エラーメッセージ（失敗時のみ）',
@@ -446,6 +475,47 @@ CREATE TABLE system_settings (
     INDEX idx_system_settings_key (key),
     FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE
 ) ENGINE=InnoDB COMMENT='システム設定';
+```
+
+### 3.18 store_admin_urls（店舗管理画面URL履歴）
+```sql
+CREATE TABLE store_admin_urls (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    store_id BIGINT UNSIGNED NOT NULL COMMENT '店舗ID',
+    url_prefix VARCHAR(100) NOT NULL COMMENT '管理画面URLプレフィックス',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE COMMENT 'アクティブフラグ',
+    activated_at TIMESTAMP NOT NULL COMMENT '有効化日時',
+    deactivated_at TIMESTAMP NULL COMMENT '無効化日時',
+    created_by BIGINT UNSIGNED NULL COMMENT '作成者ID',
+    change_reason VARCHAR(255) NULL COMMENT '変更理由',
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_store_admin_urls_prefix (url_prefix),
+    INDEX idx_store_admin_urls_store_active (store_id, is_active),
+    INDEX idx_store_admin_urls_activated (activated_at),
+    FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB COMMENT='店舗管理画面URL履歴（パスベース方式）';
+```
+
+### 3.19 guest_identifiers（ゲスト識別情報）
+```sql
+CREATE TABLE guest_identifiers (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    guest_token VARCHAR(255) NOT NULL UNIQUE COMMENT 'ゲストトークン',
+    session_id BIGINT UNSIGNED NOT NULL COMMENT 'セッションID',
+    identifier_icon VARCHAR(10) NOT NULL COMMENT '識別アイコン（絵文字）',
+    identifier_color VARCHAR(7) NOT NULL COMMENT '識別カラー（HEXコード）',
+    assigned_at TIMESTAMP NOT NULL COMMENT 'アサイン日時',
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_guest_identifiers_token (guest_token),
+    INDEX idx_guest_identifiers_session (session_id),
+    INDEX idx_guest_identifiers_assigned (assigned_at),
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='ゲスト識別情報（動物アイコン・カラー管理）';
 ```
 
 ## 4. インデックス戦略と障害復旧
