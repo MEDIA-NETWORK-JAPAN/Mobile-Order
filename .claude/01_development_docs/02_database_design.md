@@ -22,6 +22,41 @@
   - [3.6 category_product（商品カテゴリ紐付け）](#36-category_product商品カテゴリ紐付け)
   - [3.7 options（商品オプションマスター）](#37-options商品オプションマスター)
   - [3.8 product_to_options（商品とオプションの紐付け）](#38-product_to_options商品とオプションの紐付け)
+  - [3.9 option_detail（商品オプション詳細）](#39-option_detail商品オプション詳細)
+  - [3.10 images（商品画像マスター）](#310-images商品画像マスター)
+  - [3.11 tax_rates（税率マスター）](#311-tax_rates税率マスター)
+  - [3.12 orders（注文）](#312-orders注文)
+  - [3.13 order_items（注文明細）](#313-order_items注文明細)
+  - [3.14 order_item_options（注文商品オプション）](#314-order_item_options注文商品オプション)
+  - [3.15 carts（カート状態管理）](#315-cartsカート状態管理)
+  - [3.16 guest_sessions（ゲストセッション管理）](#316-guest_sessionsゲストセッション管理)
+  - [3.17 cart_logs（カート操作ログ）](#317-cart_logsカート操作ログ)
+  - [3.18 change_logs（変更履歴）](#318-change_logs変更履歴)
+  - [3.19 system_settings（システム設定）](#319-system_settingsシステム設定)
+  - [3.20 store_admin_urls（店舗管理画面URL履歴）](#320-store_admin_urls店舗管理画面url履歴)
+  - [3.21 guest_identifiers（ゲスト識別情報）](#321-guest_identifiersゲスト識別情報)
+- [4. インデックス戦略と障害復旧](#4-インデックス戦略と障害復旧)
+  - [4.1 主要検索パターン（更新版）](#41-主要検索パターン更新版)
+  - [4.2 複合インデックス（更新版）](#42-複合インデックス更新版)
+- [5. パフォーマンス考慮事項](#5-パフォーマンス考慮事項)
+  - [5.1 パーティショニング](#51-パーティショニング)
+  - [5.2 アーカイブ戦略（日次締め運用前提）](#52-アーカイブ戦略日次締め運用前提)
+- [6. データ整合性と障害復旧](#6-データ整合性と障害復旧)
+  - [6.0 障害復旧のデータ管理](#60-障害復旧のデータ管理)
+  - [6.1 外部キー制約](#61-外部キー制約)
+  - [6.2 CHECK制約](#62-check制約)
+- [7. 多言語対応](#7-多言語対応)
+  - [7.1 翻訳データ構造](#71-翻訳データ構造)
+  - [7.2 翻訳対象フィールド](#72-翻訳対象フィールド)
+  - [7.3 翻訳JSON構造例](#73-翻訳json構造例)
+  - [7.4 翻訳システム連携](#74-翻訳システム連携)
+- [8. セキュリティ考慮事項](#8-セキュリティ考慮事項)
+  - [8.1 個人情報保護](#81-個人情報保護)
+  - [8.2 監査証跡](#82-監査証跡)
+- [9. TTL管理とクリーンアップ戦略](#9-ttl管理とクリーンアップ戦略)
+  - [9.1 期限切れデータの自動削除](#91-期限切れデータの自動削除)
+  - [9.2 Laravel Scheduled Tasks](#92-laravel-scheduled-tasks)
+  - [9.3 パフォーマンス最適化](#93-パフォーマンス最適化)
 
 ---
 
@@ -46,6 +81,7 @@
 - **変更ログ**: Webサーバー主導の変更を`change_logs`テーブルでPOS同期用に記録
 - **障害復旧**: `cloud_synced`フラグでシンプル管理
 - **セッション管理**: 全ての席セッションIDはPOS端末でのみ生成（SESSION_POS_xxx形式）
+- **QRコード運用**: 固定モード（無期限）/都度発行モード（3時間TTL）のハイブリッド対応
 
 ## 2. テーブル一覧
 
@@ -55,9 +91,9 @@
 - `password_reset_tokens` - パスワードリセットトークン
 
 ### 2.2 店舗・セッション管理
-- `stores` - 店舗情報
-- `sessions` - 席管理・セッション管理（全てPOS端末で生成）
-- **ゲストセッション** - Redisで管理（guest_session:{token}形式）
+- `stores` - 店舗情報（QRコード運用モード設定含む）
+- `sessions` - 席管理・セッション管理（全てPOS端末で生成、固定/都度発行モード対応）
+- **ゲストセッション** - DBで管理（guest_sessionsテーブル、TTL自動削除）
 - **障害復旧** - FireBird側の`cloud_synced`フラグで管理
 
 ### 2.3 商品・メニュー管理
@@ -76,11 +112,14 @@
 - `order_item_options` - 注文商品のオプション選択
 
 ### 2.5 カート管理
+- `carts` - カート状態管理（リアルタイムカート情報）
+- `guest_sessions` - ゲストセッション管理（デバイス識別・同意状態）
 - `cart_logs` - カート操作ログ（監査・分析用）
 
 ### 2.6 システム管理
 - `change_logs` - Webサーバー主導の変更履歴（POS同期用）
 - `system_settings` - システム設定
+- `pos_health_checks` - POSヘルスチェック管理
 - `failed_jobs` - 失敗したジョブ
 
 ## 3. テーブル詳細設計
@@ -119,6 +158,7 @@ CREATE TABLE stores (
     email VARCHAR(255) NULL COMMENT 'メールアドレス',
     address TEXT NULL COMMENT '住所',
     business_hours JSON NULL COMMENT '営業時間（JSON）',
+    qr_mode ENUM('fixed', 'temporary') NOT NULL DEFAULT 'temporary' COMMENT 'QRコード運用モード',
     settings JSON NULL COMMENT '店舗設定（JSON）',
     is_active BOOLEAN NOT NULL DEFAULT TRUE COMMENT 'アクティブフラグ',
     created_at TIMESTAMP NULL,
@@ -139,7 +179,7 @@ CREATE TABLE sessions (
     table_number VARCHAR(50) NOT NULL COMMENT 'テーブル番号',
     customer_count INT UNSIGNED NULL COMMENT '利用人数（未設定時はNULL）',
     status ENUM('active', 'expired', 'completed') NOT NULL DEFAULT 'active' COMMENT 'ステータス',
-    expires_at TIMESTAMP NOT NULL COMMENT '有効期限',
+    expires_at TIMESTAMP NULL COMMENT '有効期限（固定QRモード時はNULL）',
     started_at TIMESTAMP NULL COMMENT '開始日時',
     completed_at TIMESTAMP NULL COMMENT '完了日時',
     created_at TIMESTAMP NULL,
@@ -401,7 +441,59 @@ CREATE TABLE order_item_options (
 ) ENGINE=InnoDB COMMENT='注文商品オプション';
 ```
 
-### 3.15 cart_logs（カート操作ログ）
+### 3.15 carts（カート状態管理）
+```sql
+CREATE TABLE carts (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    guest_token VARCHAR(255) NOT NULL COMMENT 'ゲストトークン',
+    session_id BIGINT UNSIGNED NOT NULL COMMENT 'セッションID', 
+    product_id BIGINT UNSIGNED NOT NULL COMMENT '商品ID',
+    quantity INT UNSIGNED NOT NULL COMMENT '数量',
+    unit_price INT NOT NULL COMMENT '単価（円）',
+    options JSON NULL COMMENT '選択オプション',
+    options_hash VARCHAR(32) GENERATED ALWAYS AS (MD5(IFNULL(options, ''))) STORED COMMENT 'オプション識別用ハッシュ',
+    expires_at TIMESTAMP NOT NULL COMMENT '有効期限（TTL管理）',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_carts_item (guest_token, product_id, options_hash),
+    INDEX idx_carts_token (guest_token),
+    INDEX idx_carts_expires (expires_at),
+    INDEX idx_carts_session (session_id),
+    
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT,
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='カート状態管理（Redis代替）';
+```
+
+### 3.16 guest_sessions（ゲストセッション管理）
+```sql
+CREATE TABLE guest_sessions (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    token VARCHAR(255) UNIQUE NOT NULL COMMENT 'ゲストトークン',
+    session_id BIGINT UNSIGNED NOT NULL COMMENT 'DB sessionsテーブルID',
+    device_fingerprint VARCHAR(255) NOT NULL COMMENT 'デバイス識別',
+    store_id BIGINT UNSIGNED NOT NULL COMMENT '店舗ID',
+    language CHAR(2) DEFAULT 'ja' COMMENT '言語設定',
+    agreed_policy BOOLEAN DEFAULT FALSE COMMENT 'ポリシー同意状態',
+    expires_at TIMESTAMP NOT NULL COMMENT '有効期限（30分TTL）',
+    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '最終アクセス時刻',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_guest_sessions_token (token),
+    INDEX idx_guest_sessions_expires (expires_at),
+    INDEX idx_guest_sessions_device (device_fingerprint),
+    INDEX idx_guest_sessions_session (session_id),
+    
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+    FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE RESTRICT
+) ENGINE=InnoDB COMMENT='ゲストセッション管理（Redis代替）';
+```
+
+### 3.17 cart_logs（カート操作ログ）
 ```sql
 CREATE TABLE cart_logs (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -433,7 +525,7 @@ CREATE TABLE cart_logs (
 ) ENGINE=InnoDB COMMENT='カート操作ログ（監査・調査用）';
 ```
 
-### 3.16 change_logs（変更履歴）
+### 3.18 change_logs（変更履歴）
 ```sql
 CREATE TABLE change_logs (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -459,7 +551,7 @@ CREATE TABLE change_logs (
 ) ENGINE=InnoDB COMMENT='Webサーバー主導の変更履歴（POS同期用）';
 ```
 
-### 3.17 system_settings（システム設定）
+### 3.19 system_settings（システム設定）
 ```sql
 CREATE TABLE system_settings (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -477,7 +569,27 @@ CREATE TABLE system_settings (
 ) ENGINE=InnoDB COMMENT='システム設定';
 ```
 
-### 3.18 store_admin_urls（店舗管理画面URL履歴）
+### 3.20 pos_health_checks（POSヘルスチェック）
+```sql
+CREATE TABLE pos_health_checks (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    store_id BIGINT UNSIGNED NOT NULL COMMENT '店舗ID',
+    last_check_at TIMESTAMP NOT NULL COMMENT '最終チェック日時',
+    status ENUM('online', 'warning', 'error', 'syncing') NOT NULL DEFAULT 'online' COMMENT 'POSステータス',
+    consecutive_success INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '連続成功回数',
+    timeout_threshold_seconds INT UNSIGNED NOT NULL DEFAULT 30 COMMENT 'タイムアウト闾値（秒）',
+    error_threshold_seconds INT UNSIGNED NOT NULL DEFAULT 90 COMMENT 'エラー闾値（秒）',
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_pos_health_checks_store (store_id),
+    INDEX idx_pos_health_checks_status (status),
+    INDEX idx_pos_health_checks_last_check (last_check_at),
+    FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='POSヘルスチェック管理';
+```
+
+### 3.20 store_admin_urls（店舗管理画面URL履歴）
 ```sql
 CREATE TABLE store_admin_urls (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -499,7 +611,7 @@ CREATE TABLE store_admin_urls (
 ) ENGINE=InnoDB COMMENT='店舗管理画面URL履歴（パスベース方式）';
 ```
 
-### 3.19 guest_identifiers（ゲスト識別情報）
+### 3.21 guest_identifiers（ゲスト識別情報）
 ```sql
 CREATE TABLE guest_identifiers (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -544,6 +656,10 @@ CREATE INDEX idx_sessions_table_store ON sessions(table_number, store_id);
 -- 変更ログ同期用
 CREATE INDEX idx_change_logs_sync ON change_logs(is_synced, created_at);
 
+-- カート状態管理用
+CREATE INDEX idx_carts_token_expires ON carts(guest_token, expires_at);
+CREATE INDEX idx_guest_sessions_token_expires ON guest_sessions(token, expires_at);
+
 -- カートログ分析用
 CREATE INDEX idx_cart_logs_token_date ON cart_logs(guest_token, created_at);
 
@@ -566,6 +682,8 @@ ALTER TABLE change_logs PARTITION BY RANGE (YEAR(created_at)*100 + MONTH(created
 
 ### 5.2 アーカイブ戦略（日次締め運用前提）
 - **change_logs**: 1ヶ月経過後にアーカイブテーブルに移動（POSに完全データあり）
+- **carts**: 期限切れ後に自動削除（リアルタイム管理）
+- **guest_sessions**: 期限切れ後に自動削除（30分TTL）
 - **cart_logs**: 1ヶ月経過後にアーカイブテーブルに移動（分析完了後）
 - **images**: 商品削除時に連動して整理
 - **orders**: 1年経過後にアーカイブテーブルに移動（法的保管期間）
@@ -603,8 +721,8 @@ ALTER TABLE products ADD CONSTRAINT chk_products_tax_in_price CHECK (tax_in_pric
 -- 数量は1以上
 ALTER TABLE order_items ADD CONSTRAINT chk_order_items_quantity CHECK (quantity >= 1);
 
--- セッション有効期限は未来日時
-ALTER TABLE sessions ADD CONSTRAINT chk_sessions_expires_at CHECK (expires_at > created_at);
+-- セッション有効期限は未来日時（固定QRモード時はNULL許可）
+ALTER TABLE sessions ADD CONSTRAINT chk_sessions_expires_at CHECK (expires_at IS NULL OR expires_at > created_at);
 
 -- 提供状態の妥当性
 ALTER TABLE products ADD CONSTRAINT chk_products_availability 
@@ -669,96 +787,73 @@ CHECK (availability_status IN ('available', 'sold_out', 'not_arrived', 'preparin
 - **IPアドレス**: アクセス元の記録
 - **ユーザーエージェント**: アクセス元デバイス情報
 
-## 9. Redisスキーマ設計（ゲストセッション）
+## 9. TTL管理とクリーンアップ戦略
 
-### 9.1 データ構造
+### 9.1 期限切れデータの自動削除
 
-#### ゲストセッション
-```redis
-# キー形式
-guest_session:{token}
+#### ゲストセッション管理
+- **TTL管理**: `guest_sessions.expires_at`カラムで管理
+- **自動延長**: APIアクセス時に`last_activity`更新、`expires_at`っ30分延長
+- **期限切れ削除**: Laravel Scheduled Taskで毎分実行
 
-# データ構造（Hash）
-{
-    "token": "guest_abc123def456",
-    "device_fingerprint": "browser_chrome_win10_hash123",
-    "store_id": "1",
-    "session_id": "123",  # DBのsessionsテーブルID（必須）
-    "created_at": "2024-01-01T12:00:00+09:00",
-    "last_access": "2024-01-01T12:30:00+09:00",
-    "language": "ja"
-}
+#### カート状態管理
+- **TTL管理**: `carts.expires_at`カラムで管理
+- **自動延長**: カート操作時に30分延長
+- **期限切れ削除**: ゲストセッションと連動して自動削除
 
-# TTL: 30分（1800秒）、アクティビティごとに自動延長
-```
-
-#### カートデータ（シンプル化）
-```redis
-# キー形式
-guest_cart:{token}
-
-# データ構造（Hash）
-{
-    "items": "[{\"product_id\":101,\"quantity\":2,\"options\":[{\"option_id\":10,\"product_id\":201}]}]",
-    "updated_at": "2024-01-01T12:30:00+09:00"
-}
-
-# TTL: 30分（1800秒）、アクティビティごとに自動延長
-```
-
-#### デバイス識別情報
-```redis
-# キー形式
-device:{device_fingerprint}
-
-# データ構造（String）
-"guest_abc123def456"
-
-# TTL: 24時間（86400秒）
-```
-
-### 9.2 Redis操作例
+### 9.2 Laravel Scheduled Tasks
 
 ```php
-// ゲストセッション作成
-Redis::hmset("guest_session:{$token}", [
-    'token' => $token,
-    'device_fingerprint' => $fingerprint,
-    'store_id' => $storeId,
-    'session_id' => $sessionId,  // 必須
-    'created_at' => now()->toISOString(),
-    'last_access' => now()->toISOString(),
-    'language' => 'ja'
-]);
-Redis::expire("guest_session:{$token}", 1800); // 30分
-
-// カートデータ保存（シンプル化）
-Redis::hmset("guest_cart:{$token}", [
-    'items' => json_encode($cartItems),
-    'updated_at' => now()->toISOString()
-]);
-Redis::expire("guest_cart:{$token}", 1800); // 30分
-
-// 各API呼び出し時にミドルウェアで自動TTL延長（30分）
-// ExtendGuestSession ミドルウェアで実装
-
-// デバイス識別情報設定
-Redis::setex("device:{$fingerprint}", 86400, $token); // 24時間
+// app/Console/Kernel.php
+protected function schedule(Schedule $schedule)
+{
+    // 期限切れゲストセッション削除（毎分）
+    $schedule->command('guest:cleanup-expired')->everyMinute();
+    
+    // 期限切れカート削除（5分毎）
+    $schedule->command('cart:cleanup-expired')->everyFiveMinutes();
+    
+    // 長期間未使用データのアーカイブ（日次）
+    $schedule->command('archive:old-data')->daily();
+}
 ```
 
-### 9.3 クリーンアップ戦略
-
-#### 期限切れセッション自動削除
-- **TTL利用**: Redisの自動期限切れ機能
-- **バックグラウンドクリーンアップ**: Laravel Schedulerで定期実行
-
-#### 長時間未使用セッション削除
-```bash
-# 1日未アクセスのセッションを削除（軽量化優先）
-php artisan session:cleanup --type=guest --inactive=86400
-php artisan archive:old-data --change-logs=30 --cart-logs=30
+```php
+// app/Console/Commands/GuestCleanupExpired.php
+class GuestCleanupExpired extends Command
+{
+    public function handle()
+    {
+        // 期限切れゲストセッション削除
+        $deletedSessions = GuestSession::where('expires_at', '<', now())->delete();
+        
+        // 連動してカートも削除
+        $deletedCarts = Cart::where('expires_at', '<', now())->delete();
+        
+        $this->info("Deleted {$deletedSessions} expired guest sessions");
+        $this->info("Deleted {$deletedCarts} expired carts");
+    }
+}
 ```
+
+### 9.3 パフォーマンス最適化
+
+#### DBインデックス最適化
+```sql
+-- TTL管理用インデックス
+CREATE INDEX idx_guest_sessions_expires_cleanup ON guest_sessions(expires_at) WHERE expires_at < NOW();
+CREATE INDEX idx_carts_expires_cleanup ON carts(expires_at) WHERE expires_at < NOW();
+
+-- 高速検索用インデックス
+CREATE INDEX idx_guest_sessions_token_active ON guest_sessions(token) WHERE expires_at > NOW();
+CREATE INDEX idx_carts_token_active ON carts(guest_token) WHERE expires_at > NOW();
+```
+
+#### カート操作最適化
+- **Upsert操作**: `ON DUPLICATE KEY UPDATE`で高速更新
+- **バッチ処理**: 複数アイテムの一括更新
+- **結果キャッシュ**: Laravel ModelのEager Loading活用
 
 ---
 
-**注意**: このデータベース設計は軽量化を重視したアーカイブ戦略を採用しています。POSシステムが全マスターデータを保持する前提で設計されているため、データ復旧時はPOSからの同期を活用してください。
+**注意**: このデータベース設計はDB中心のシンプルな構成で、Redis障害リスクを完全に排除しています。POSシステムが全マスターデータを保持する前提で、ゲストセッションとカート管理もDBで統一しています。

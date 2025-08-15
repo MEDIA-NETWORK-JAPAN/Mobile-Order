@@ -1,5 +1,39 @@
 # Laravel Sailベストプラクティス文書
 
+## 📚 目次
+
+- [1. Laravel Sail 概要](#1-laravel-sail-概要)
+  - [1.1 基本構成](#11-基本構成)
+  - [1.2 技術スタック](#12-技術スタック)
+  - [1.3 プロジェクト環境要件](#13-プロジェクト環境要件)
+- [2. セットアップベストプラクティス](#2-セットアップベストプラクティス)
+  - [2.1 初期セットアップ手順](#21-初期セットアップ手順)
+  - [2.2 環境設定最適化](#22-環境設定最適化)
+  - [2.3 エイリアス設定](#23-エイリアス設定)
+- [3. 開発ワークフローベストプラクティス](#3-開発ワークフローベストプラクティス)
+  - [3.1 日常的な開発フロー](#31-日常的な開発フロー)
+  - [3.2 データベース管理](#32-データベース管理)
+  - [3.3 テスト実行](#33-テスト実行)
+  - [3.4 パッケージ管理](#34-パッケージ管理)
+- [4. パフォーマンス最適化](#4-パフォーマンス最適化)
+  - [4.1 コンテナリソース最適化](#41-コンテナリソース最適化)
+  - [4.2 開発時のキャッシュ戦略](#42-開発時のキャッシュ戦略)
+  - [4.3 ファイルウォッチングの最適化](#43-ファイルウォッチングの最適化)
+- [5. デバッグとトラブルシューティング](#5-デバッグとトラブルシューティング)
+  - [5.1 Xdebugセットアップ](#51-xdebugセットアップ)
+  - [5.2 ログ管理](#52-ログ管理)
+  - [5.3 よくある問題と解決方法](#53-よくある問題と解決方法)
+- [6. 本番環境への移行準備](#6-本番環境への移行準備)
+  - [6.1 環境変数管理](#61-環境変数管理)
+  - [6.2 最適化コマンド](#62-最適化コマンド)
+  - [6.3 セキュリティチェックリスト](#63-セキュリティチェックリスト)
+- [7. チーム開発ベストプラクティス](#7-チーム開発ベストプラクティス)
+  - [7.1 Docker設定の共有](#71-docker設定の共有)
+  - [7.2 開発環境統一](#72-開発環境統一)
+  - [7.3 CI/CD統合](#73-cicd統合)
+
+---
+
 ## 1. Laravel Sail 概要
 
 ### 1.1 基本構成
@@ -9,7 +43,7 @@ Laravel Sailは、Laravel開発環境をDockerで構築するためのコマン�
 - **Docker Desktop**: コンテナ仮想化プラットフォーム
 - **Laravel 11.x**: PHPウェブアプリケーションフレームワーク
 - **MySQL 8.0**: データベース管理システム
-- **Redis**: キャッシュとセッションストレージ
+- **Laravel Cache**: ファイルベースキャッシュシステム（Redis削除により変更）
 - **Mailpit**: 開発用メールサーバー
 - **Node.js**: フロントエンドビルドツール
 
@@ -25,7 +59,7 @@ Laravel Sailは、Laravel開発環境をDockerで構築するためのコマン�
 #### 新規プロジェクト作成
 ```bash
 # Laravel Sailを含むプロジェクト作成
-curl -s "https://laravel.build/mobile-order?with=mysql,redis,mailpit" | bash
+curl -s "https://laravel.build/mobile-order?with=mysql,mailpit" | bash  # Redis削除
 
 # プロジェクトディレクトリに移動
 cd mobile-order
@@ -75,20 +109,20 @@ DB_PASSWORD=password
 BROADCAST_DRIVER=log
 
 # キャッシュ設定
-CACHE_DRIVER=redis
+CACHE_DRIVER=file  # Redisからファイルベースに変更
 FILESYSTEM_DISK=local
 
 # キュー設定
-QUEUE_CONNECTION=redis
+QUEUE_CONNECTION=database  # RedisからDBキューに変更
 
 # セッション設定
-SESSION_DRIVER=redis
+SESSION_DRIVER=database  # RedisからDBセッションに変更
 SESSION_LIFETIME=120
 
-# Redis設定
-REDIS_HOST=redis
-REDIS_PASSWORD=null
-REDIS_PORT=6379
+# Redis設定（使用しないためコメントアウト）
+# REDIS_HOST=redis
+# REDIS_PASSWORD=null
+# REDIS_PORT=6379
 
 # メール設定（開発用）
 MAIL_MAILER=smtp
@@ -133,7 +167,7 @@ services:
             - sail
         depends_on:
             - mysql
-            - redis
+            # - redis  # Redis削除によりコメントアウト
             - mailpit
     mysql:
         image: 'mysql/mysql-server:8.0'
@@ -159,21 +193,22 @@ services:
                 - '-p${DB_PASSWORD}'
             retries: 3
             timeout: 5s
-    redis:
-        image: 'redis:alpine'
-        ports:
-            - '${FORWARD_REDIS_PORT:-6379}:6379'
-        volumes:
-            - 'sail-redis:/data'
-        networks:
-            - sail
-        healthcheck:
-            test:
-                - CMD
-                - redis-cli
-                - ping
-            retries: 3
-            timeout: 5s
+    # redis:
+    #     image: 'redis:alpine'
+    #     ports:
+    #         - '${FORWARD_REDIS_PORT:-6379}:6379'
+    #     volumes:
+    #         - 'sail-redis:/data'
+    #     networks:
+    #         - sail
+    #     healthcheck:
+    #         test:
+    #             - CMD
+    #             - redis-cli
+    #             - ping
+    #         retries: 3
+    #         timeout: 5s
+    # Redis使用しないためコメントアウト
     mailpit:
         image: 'axllent/mailpit:latest'
         ports:
@@ -187,8 +222,8 @@ networks:
 volumes:
     sail-mysql:
         driver: local
-    sail-redis:
-        driver: local
+    # sail-redis:
+    #     driver: local  # Redis使用しないためコメントアウト
 ```
 
 ### 2.3 エイリアス設定
@@ -425,18 +460,17 @@ sail artisan event:cache
 sail artisan optimize:clear
 ```
 
-#### Redis活用
+#### ファイルベースキャッシュ活用
 ```php
 // config/cache.php
 'stores' => [
-    'redis' => [
-        'driver' => 'redis',
-        'connection' => 'cache',
-        'lock_connection' => 'default',
+    'file' => [
+        'driver' => 'file',
+        'path' => storage_path('framework/cache/data'),
     ],
 ],
 
-// Redisを使ったキャッシュ例
+// ファイルベースキャッシュ例
 Cache::remember('products', 3600, function () {
     return Product::with('category')->get();
 });
@@ -526,7 +560,7 @@ sail logs
 
 # 特定のサービスログ確認
 sail logs mysql
-sail logs redis
+sail logs mysql  # redisサービスは存在しないため変更
 
 # リアルタイムログ監視
 sail logs -f
@@ -597,12 +631,12 @@ DB_DATABASE=your_production_db
 DB_USERNAME=your_production_user
 DB_PASSWORD=your_secure_password
 
-CACHE_DRIVER=redis
-SESSION_DRIVER=redis
-QUEUE_CONNECTION=redis
+CACHE_DRIVER=file
+SESSION_DRIVER=database
+QUEUE_CONNECTION=database
 
-REDIS_HOST=your-redis-host
-REDIS_PASSWORD=your-redis-password
+# REDIS_HOST=your-redis-host  # Redis使用しないためコメントアウト
+# REDIS_PASSWORD=your-redis-password  # Redis使用しないためコメントアウト
 ```
 
 ### 6.2 最適化コマンド
@@ -624,7 +658,7 @@ sail npm run build
 - [ ] `APP_DEBUG=false`に設定
 - [ ] `APP_KEY`が設定済み
 - [ ] データベース認証情報が安全
-- [ ] Redis認証情報が設定済み
+# - [ ] Redis認証情報が設定済み  # Redis使用しないため削除
 - [ ] HTTPS設定が完了
 - [ ] 不要なパッケージが削除済み
 - [ ] ログレベルが適切に設定
@@ -709,11 +743,12 @@ jobs:
           - 3306:3306
         options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
       
-      redis:
-        image: redis:alpine
-        ports:
-          - 6379:6379
-        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=3
+      # redis:
+      #   image: redis:alpine
+      #   ports:
+      #     - 6379:6379
+      #   options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=3
+      # Redis使用しないためコメントアウト
 
     steps:
     - uses: actions/checkout@v3

@@ -1,5 +1,49 @@
 # 認証・認可設計書
 
+## 📚 目次
+
+- [1. 認証・認可概要](#1-認証認可概要)
+  - [1.1 認証方式](#11-認証方式)
+  - [1.2 2層認証システムの設計思想](#12-2層認証システムの設計思想)
+  - [1.3 セッション管理の統一原則](#13-セッション管理の統一原則)
+  - [1.4 ユーザー役割](#14-ユーザー役割)
+- [2. Laravel Breeze（Web認証）](#2-laravel-breezeweb認証)
+  - [2.1 対象ユーザー](#21-対象ユーザー)
+  - [2.2 認証機能](#22-認証機能)
+  - [2.3 セキュリティ設定](#23-セキュリティ設定)
+  - [2.4 ミドルウェア構成](#24-ミドルウェア構成)
+- [3. ゲスト認証（モバイルAPI）](#3-ゲスト認証モバイルapi)
+  - [3.1 対象ユーザー](#31-対象ユーザー)
+  - [3.2 認証フロー](#32-認証フロー)
+  - [3.3 DBセッション設定](#33-dbセッション設定)
+  - [3.4 API認証実装](#34-api認証実装)
+  - [3.5 ゲスト認証実装](#35-ゲスト認証実装)
+- [4. Laravel Sanctum（POS API）](#4-laravel-sanctumpos-api)
+  - [4.1 対象システム](#41-対象システム)
+  - [4.2 認証方式](#42-認証方式)
+  - [4.3 POS認証設定](#43-pos認証設定)
+  - [4.4 POS認証ミドルウェア](#44-pos認証ミドルウェア)
+- [5. 権限管理システム](#5-権限管理システム)
+  - [5.1 権限マトリクス](#51-権限マトリクス)
+  - [5.2 権限チェック実装](#52-権限チェック実装)
+- [6. セキュリティ対策](#6-セキュリティ対策)
+  - [6.1 レート制限](#61-レート制限)
+  - [6.2 CSRF保護](#62-csrf保護)
+  - [6.3 CORS設定](#63-cors設定)
+- [7. セッション管理](#7-セッション管理)
+  - [7.1 QRコード セッション（URLパラメータ方式）](#71-qrコード-セッションurlパラメータ方式)
+  - [7.2 セッション クリーンアップ](#72-セッション-クリーンアップ)
+- [8. API認証フロー詳細](#8-api認証フロー詳細)
+  - [8.1 モバイル認証フロー](#81-モバイル認証フロー)
+  - [8.2 POS認証フロー](#82-pos認証フロー)
+- [9. ログ・監査](#9-ログ監査)
+  - [9.1 認証ログ](#91-認証ログ)
+  - [9.2 API アクセスログ](#92-api-アクセスログ)
+- [10. テスト設計](#10-テスト設計)
+  - [10.1 認証テスト](#101-認証テスト)
+
+---
+
 ## 1. 認証・認可概要
 
 ### 1.1 認証方式
@@ -18,13 +62,13 @@
 - **生成元**: **POS端末のみ**（SESSION_POS_xxx形式）
 - **管理場所**: データベース（sessionsテーブル）
 - **識別子**: POS生成 session_id → WebでURL化
-- **有効期限**: 3時間（席の利用時間）
+- **有効期限**: 固定QRモード時は無期限（NULL）、都度発行モード時は3時間TTL
 - **共有範囲**: 同じテーブルの全利用者
 
-#### **第2層: ゲストセッション認証（Redis）**
+#### **第2層: ゲストセッション認証（DB）**
 - **目的**: 個人識別・不正アクセス防止・端末特定
 - **生成**: スマホアクセス時に自動生成
-- **管理場所**: Redis（guest_session:{token}）
+- **管理場所**: データベース（guest_sessionsテーブル）
 - **識別子**: guest_token + device_fingerprint
 - **有効期限**: 30分（アクティビティで自動延長）
 - **特定機能**: 注文履歴から「誰が注文したか」を視覚化
@@ -44,6 +88,7 @@
 2. WebサーバーはセッションIDを受け取りのみ
 3. 障害時はcloud_synced=FALSEフラグで管理
 4. 復旧時は自動同期でデータ整合性保証
+5. QRコード運用モード（固定/都度発行）は店舗単位で設定
 ```
 
 ### 1.4 ユーザー役割
@@ -89,7 +134,7 @@ enum UserRole: string
 ],
 
 // config/session.php
-'lifetime' => 120, // 2時間（アクティビティで自動延長）
+'lifetime' => 180, // 3時間（管理者セッション、アクティビティで自動延長）
 'expire_on_close' => false,
 'encrypt' => true,
 'http_only' => true,
@@ -173,9 +218,10 @@ class ExtendSessionOnActivity
 #### スマートフォン認証フロー
 ```
 1. QRコード読み取り → 席セッション取得
-2. 席セッション取得後 → ゲストトークン自動生成
-3. デバイス識別 → device_fingerprint設定
-4. APIアクセス時にゲストトークンを使用（Bearer形式）
+2. 同意画面表示 → ハンドルキーパー・セキュリティポリシー同意
+3. 席セッション取得後 → ゲストトークン自動生成
+4. デバイス識別 → device_fingerprint設定
+5. APIアクセス時にゲストトークンを使用（Bearer形式）
 ```
 
 #### ハンディ端末認証フロー
@@ -186,12 +232,12 @@ class ExtendSessionOnActivity
 4. 擬似トークンはDB記録のみ使用（認証機能なし）
 ```
 
-### 3.3 Redis設定
+### 3.3 DBセッション設定
 ```php
-// ゲストセッション管理
-'guest_session_ttl' => 1800, // 30分
-'guest_cart_ttl' => 1800,    // 30分
-'device_fingerprint_ttl' => 86400, // 24時間
+// ゲストセッションTTL管理
+'guest_session_ttl' => 1800, // 30分（expires_atカラムで管理）
+'guest_cart_ttl' => 1800,    // 30分（expires_atカラムで管理）
+'device_fingerprint_retention' => 86400, // 24時間（履歴保持期間）
 ```
 
 ### 3.4 API認証実装
@@ -244,24 +290,19 @@ class GuestSessionController extends Controller
         // ゲストトークン生成
         $guestToken = 'guest_' . Str::random(32);
         
-        // Redisにセッション保存
-        Redis::hmset("guest_session:{$guestToken}", [
+        // DBにゲストセッション保存
+        $guestSession = GuestSession::create([
             'token' => $guestToken,
             'device_fingerprint' => $deviceFingerprint,
             'store_id' => $storeId,
             'session_id' => $sessionId,
-            'created_at' => now()->toISOString(),
-            'last_access' => now()->toISOString(),
-            'language' => $request->input('language', 'ja')
+            'language' => $request->input('language', 'ja'),
+            'agreed_policy' => false,
+            'expires_at' => now()->addMinutes(30),
+            'last_activity' => now()
         ]);
-        Redis::expire("guest_session:{$guestToken}", 1800); // 30分TTL
         
-        // カート初期化
-        Redis::hmset("guest_cart:{$guestToken}", [
-            'items' => json_encode([]),
-            'updated_at' => now()->toISOString()
-        ]);
-        Redis::expire("guest_cart:{$guestToken}", 1800);
+        // カート初期化は不要（必要時に作成）
         
         return response()->json([
             'guest_token' => $guestToken,
@@ -270,7 +311,7 @@ class GuestSessionController extends Controller
     }
     
     // ゲストセッション自動延長はミドルウェアで実装
-    // 各API呼び出し時に自動的にTTLを30分に延長
+    // 各API呼び出し時に自動的にexpires_atを30分延長
 }
 ```
 
@@ -281,17 +322,15 @@ class GuestSessionController extends Controller
 
 ### 4.2 認証方式
 - **トークン有効期限**: 24時間（自動更新機能付き）
-- **IPアドレス制限**: 店舗固有IP許可リスト
+- **認証方法**: Bearer Token認証のみ
 - **API能力制限**: スコープベース権限管理
 
 ### 4.3 POS認証設定
 ```php
 // config/pos.php
 return [
-    'allowed_ips' => [
-        'store_1' => ['192.168.1.100', '192.168.1.101'],
-        'store_2' => ['192.168.2.100', '192.168.2.101'],
-    ],
+    'token_expires' => 86400,     // 24時間 (秒)
+    'auto_refresh' => true,       // 自動更新有効
     
     'rate_limits' => [
         'polling' => '60:1',      // 1分間に60回
@@ -314,16 +353,8 @@ class EnsurePosApiAccess
             return response()->json(['error' => 'POS認証が必要です'], 401);
         }
         
-        // IPアドレス制限チェック
-        $allowedIps = config('pos.allowed_ips.store_' . $user->store_id, []);
-        if (!in_array($request->ip(), $allowedIps)) {
-            Log::warning('POS API不正アクセス', [
-                'ip' => $request->ip(),
-                'user_id' => $user->id,
-                'store_id' => $user->store_id
-            ]);
-            return response()->json(['error' => '許可されていないIPアドレスです'], 403);
-        }
+        // Bearer Token認証のみで制御
+        // IPアドレスによる制限は行わない
         
         return $next($request);
     }
@@ -339,7 +370,7 @@ class Permission
     const PERMISSIONS = [
         'super_admin' => [
             'system.*',           // 全システム機能
-            'stores.*',           // 全店舗管理
+            'stores.*',           // 全店舗管理（新規登録・基本5項目編集）
             'users.*',            // 全ユーザー管理
             'reports.*',          // 全レポート
         ],
@@ -486,16 +517,16 @@ return [
 
 ## 7. セッション管理
 
-### 7.1 QRコード セッション
+### 7.1 QRコード セッション（URLパラメータ方式）
 ```php
 class SessionController extends Controller
 {
-    public function start(Request $request)
+    public function start(Request $request, $sessionToken)
     {
-        $qrCode = $request->input('qr_code');
+        // URLパラメータから session_token を取得（QRコード読み取り画面なし）
         $customerCount = $request->input('customer_count', 1);
         
-        $session = Session::where('qr_code', $qrCode)
+        $session = Session::where('session_id', $sessionToken)
             ->where('expires_at', '>', now())
             ->where('status', 'active')
             ->first();
@@ -585,7 +616,7 @@ class CleanupExpiredSessions extends Command
 4. アプリ: POST /api/v1/auth/guest/start (席セッション取得後に自動実行)
    Body: { "session_id": 123, "device_fingerprint": "xxx", "store_id": 1 }
    ↓
-5. サーバー: ゲストトークン生成・Redis保存
+5. サーバー: ゲストトークン生成・DB保存（guest_sessionsテーブル）
    ↓
 6. レスポンス: { "guest_token": "guest_xxx", "expires_in": 1800 }
    ↓

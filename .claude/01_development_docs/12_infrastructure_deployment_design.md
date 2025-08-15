@@ -1,5 +1,41 @@
 # インフラ・デプロイメント設計書
 
+## 📚 目次
+
+- [1. インフラ設計概要](#1-インフラ設計概要)
+  - [1.1 設計方針](#11-設計方針)
+  - [1.2 環境構成](#12-環境構成)
+- [2. 開発環境設計](#2-開発環境設計)
+  - [2.1 Laravel Sail構成](#21-laravel-sail構成)
+  - [2.2 開発環境用設定](#22-開発環境用設定)
+- [3. 本番環境設計](#3-本番環境設計)
+  - [3.1 システム構成図](#31-システム構成図)
+  - [3.2 サーバー仕様](#32-サーバー仕様)
+  - [3.3 本番環境Docker構成](#33-本番環境docker構成)
+- [4. デプロイメント戦略](#4-デプロイメント戦略)
+  - [4.1 CI/CDパイプライン](#41-cicdパイプライン)
+  - [4.2 Blue-Green デプロイメント](#42-blue-green-デプロイメント)
+  - [4.3 ロールバック戦略](#43-ロールバック戦略)
+- [5. 監視・ログ設計](#5-監視ログ設計)
+  - [5.1 アプリケーション監視](#51-アプリケーション監視)
+  - [5.2 ヘルスチェックエンドポイント](#52-ヘルスチェックエンドポイント)
+  - [5.3 ログ設定](#53-ログ設定)
+- [6. セキュリティ設定](#6-セキュリティ設定)
+  - [6.1 Nginx設定](#61-nginx設定)
+  - [6.2 ファイアウォール設定](#62-ファイアウォール設定)
+- [7. バックアップ・復旧](#7-バックアップ復旧)
+  - [7.1 データベースバックアップ](#71-データベースバックアップ)
+  - [7.2 アプリケーションバックアップ](#72-アプリケーションバックアップ)
+  - [7.3 復旧手順](#73-復旧手順)
+- [8. 災害復旧計画](#8-災害復旧計画)
+  - [8.1 RTO/RPO目標](#81-rtorpo目標)
+  - [8.2 災害復旧手順](#82-災害復旧手順)
+- [9. 運用手順書](#9-運用手順書)
+  - [9.1 日次運用タスク](#91-日次運用タスク)
+  - [9.2 週次運用タスク](#92-週次運用タスク)
+
+---
+
 ## 1. インフラ設計概要
 
 ### 1.1 設計方針
@@ -44,7 +80,7 @@ services:
             - sail
         depends_on:
             - mysql
-            - redis
+            # - redis  # Redis削除によりコメントアウト
             - mailpit
     
     mysql:
@@ -68,18 +104,19 @@ services:
             retries: 3
             timeout: 5s
     
-    redis:
-        image: 'redis:alpine'
-        ports:
-            - '${FORWARD_REDIS_PORT:-6379}:6379'
-        volumes:
-            - 'sail-redis:/data'
-        networks:
-            - sail
-        healthcheck:
-            test: ["CMD", "redis-cli", "ping"]
-            retries: 3
-            timeout: 5s
+    # redis:
+    #     image: 'redis:alpine'
+    #     ports:
+    #         - '${FORWARD_REDIS_PORT:-6379}:6379'
+    #     volumes:
+    #         - 'sail-redis:/data'
+    #     networks:
+    #         - sail
+    #     healthcheck:
+    #         test: ["CMD", "redis-cli", "ping"]
+    #         retries: 3
+    #         timeout: 5s
+    # Redisを使用しないためコメントアウト
     
     mailpit:
         image: 'axllent/mailpit:latest'
@@ -96,8 +133,8 @@ networks:
 volumes:
     sail-mysql:
         driver: local
-    sail-redis:
-        driver: local
+    # sail-redis:
+    #     driver: local  # Redis使用しないためコメントアウト
 ```
 
 ### 2.2 開発環境用設定
@@ -117,14 +154,14 @@ DB_DATABASE=mobile_order
 DB_USERNAME=sail
 DB_PASSWORD=password
 
-REDIS_HOST=redis
-REDIS_PASSWORD=null
-REDIS_PORT=6379
+# REDIS_HOST=redis          # Redis使用しないためコメントアウト
+# REDIS_PASSWORD=null       # Redis使用しないためコメントアウト
+# REDIS_PORT=6379           # Redis使用しないためコメントアウト
 
-CACHE_DRIVER=redis
+CACHE_DRIVER=file            # Redisからファイルキャッシュに変更
 FILESYSTEM_DISK=local
-QUEUE_CONNECTION=redis
-SESSION_DRIVER=redis
+QUEUE_CONNECTION=database     # Redisからデータベースキューに変更
+SESSION_DRIVER=database       # Redisからデータベースセッションに変更
 SESSION_LIFETIME=120
 
 MAIL_MAILER=smtp
@@ -166,7 +203,7 @@ graph TB
     subgraph "Data Tier"
         DB_MASTER[MySQL Master]
         DB_SLAVE[MySQL Slave]
-        REDIS[Redis Cluster]
+        %% REDIS[Redis Cluster] - 使用しないためコメントアウト
     end
     
     subgraph "Storage"
@@ -189,10 +226,10 @@ graph TB
     APP2 --> DB_MASTER
     APP1 --> DB_SLAVE
     APP2 --> DB_SLAVE
-    APP1 --> REDIS
-    APP2 --> REDIS
+    %% APP1 --> REDIS - Redis使用しないためコメントアウト
+    %% APP2 --> REDIS - Redis使用しないためコメントアウト
     QUEUE --> DB_MASTER
-    QUEUE --> REDIS
+    %% QUEUE --> REDIS - Redis使用しないためコメントアウト
     APP1 --> S3
     APP2 --> S3
     DB_MASTER --> DB_SLAVE
@@ -238,15 +275,16 @@ Services:
   - MySQL 8.0 (Slave)
 ```
 
-#### Redisサーバー
+#### ~~Redisサーバー~~ （削除）
 ```yaml
-# Redis Cluster (3 nodes)
-CPU: 2 vCPU per node
-Memory: 4GB RAM per node
-Storage: 20GB SSD per node
-OS: Ubuntu 20.04 LTS
-Services:
-  - Redis 6.0+ (Cluster mode)
+# Redis使用しないためサーバー不要
+# 以前の構成: Redis Cluster (3 nodes)
+# CPU: 2 vCPU per node
+# Memory: 4GB RAM per node  
+# Storage: 20GB SSD per node
+# OS: Ubuntu 20.04 LTS
+# Services:
+#   - Redis 6.0+ (Cluster mode)
 ```
 
 ### 3.3 本番環境Docker構成
@@ -259,7 +297,7 @@ RUN apk add --no-cache \
     nginx \
     supervisor \
     mysql-client \
-    redis \
+    # redis \  # Redis使用しないためコメントアウト
     git \
     curl \
     libpng-dev \
@@ -331,11 +369,12 @@ jobs:
           - 3306:3306
         options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
       
-      redis:
-        image: redis
-        ports:
-          - 6379:6379
-        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=3
+      # redis:
+      #   image: redis
+      #   ports:
+      #     - 6379:6379
+      #   options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=3
+      # Redis使用しないためコメントアウト
     
     steps:
     - uses: actions/checkout@v3
@@ -367,8 +406,8 @@ jobs:
         DB_DATABASE: mobile_order_test
         DB_USERNAME: root
         DB_PASSWORD: ''
-        REDIS_HOST: 127.0.0.1
-        REDIS_PORT: 6379
+        # REDIS_HOST: 127.0.0.1  # Redis使用しないためコメントアウト
+        # REDIS_PORT: 6379        # Redis使用しないためコメントアウト
   
   build:
     needs: test
@@ -530,7 +569,7 @@ class HealthController extends Controller
     {
         $checks = [
             'database' => $this->checkDatabase(),
-            'redis' => $this->checkRedis(),
+            // 'redis' => $this->checkRedis(), // Redis使用しないためコメントアウト
             'storage' => $this->checkStorage(),
             'queue' => $this->checkQueue(),
         ];
@@ -554,15 +593,15 @@ class HealthController extends Controller
         }
     }
     
-    private function checkRedis(): array
-    {
-        try {
-            Redis::ping();
-            return ['status' => 'ok', 'message' => 'Redis connection successful'];
-        } catch (Exception $e) {
-            return ['status' => 'error', 'message' => $e->getMessage()];
-        }
-    }
+    // private function checkRedis(): array  // Redis使用しないためコメントアウト
+    // {
+    //     try {
+    //         Redis::ping();
+    //         return ['status' => 'ok', 'message' => 'Redis connection successful'];
+    //     } catch (Exception $e) {
+    //         return ['status' => 'error', 'message' => $e->getMessage()];
+    //     }
+    // }
 }
 ```
 
@@ -699,8 +738,8 @@ ufw allow 443/tcp
 # MySQL (アプリケーションサーバーからのみ)
 ufw allow from 10.0.1.0/24 to any port 3306
 
-# Redis (アプリケーションサーバーからのみ)
-ufw allow from 10.0.1.0/24 to any port 6379
+# Redis (アプリケーションサーバーからのみ) - Redis使用しないためコメントアウト
+# ufw allow from 10.0.1.0/24 to any port 6379
 
 # Enable UFW
 ufw --force enable
@@ -854,7 +893,7 @@ echo "=== Daily Maintenance Started ==="
 # 1. システム状態確認
 echo "Checking system status..."
 docker-compose ps
-systemctl status nginx mysql redis
+systemctl status nginx mysql  # redis削除
 
 # 2. ディスク使用量確認
 echo "Checking disk usage..."

@@ -151,7 +151,7 @@ mobile-order-system/
    - 対象: POSシステム
    - 方式: Bearer Token
    - 有効期限: 無期限
-   - IPアドレス制限付き
+   - Bearer Token認証
 
 ## 実装優先順位
 

@@ -1,5 +1,43 @@
 # UIコンポーネント設計書
 
+## 📚 目次
+
+- [1. 設計方針](#1-設計方針)
+  - [1.1 技術スタック](#11-技術スタック)
+  - [1.2 コンポーネント設計原則](#12-コンポーネント設計原則)
+- [2. コンポーネント階層](#2-コンポーネント階層)
+  - [2.1 構造](#21-構造)
+  - [2.2 分類](#22-分類)
+- [3. デザイントークン](#3-デザイントークン)
+  - [3.1 カラーパレット](#31-カラーパレット)
+  - [3.2 タイポグラフィ](#32-タイポグラフィ)
+  - [3.3 スペーシング](#33-スペーシング)
+- [4. 主要コンポーネント仕様](#4-主要コンポーネント仕様)
+  - [4.1 ProductGrid（商品グリッド）](#41-productgrid商品グリッド)
+  - [4.2 CartComponent（カートコンポーネント）](#42-cartcomponentカートコンポーネント)
+  - [4.3 Mary UI 基本コンポーネント活用](#43-mary-ui-基本コンポーネント活用)
+  - [4.4 モーダル/ドロワー](#44-モーダルドロワー)
+- [5. レスポンシブデザイン](#5-レスポンシブデザイン)
+  - [5.1 ブレークポイント](#51-ブレークポイント)
+  - [5.2 モバイル最適化](#52-モバイル最適化)
+- [6. アクセシビリティ](#6-アクセシビリティ)
+  - [6.1 基本要件](#61-基本要件)
+  - [6.2 実装例](#62-実装例)
+- [7. パフォーマンス最適化](#7-パフォーマンス最適化)
+  - [7.1 画像最適化](#71-画像最適化)
+  - [7.2 Livewire最適化](#72-livewire最適化)
+- [8. アニメーション](#8-アニメーション)
+  - [8.1 トランジション](#81-トランジション)
+  - [8.2 ローディング表示](#82-ローディング表示)
+- [11. ドラッグ＆ドロップソート機能](#11-ドラッグドロップソート機能)
+  - [11.1 対象テーブル](#111-対象テーブル)
+  - [11.2 実装方法（Livewire + Alpine.js）](#112-実装方法livewire--alpinejs)
+  - [11.3 Mary UIを使った実装](#113-mary-uiを使った実装)
+  - [11.4 タッチデバイス対応](#114-タッチデバイス対応)
+  - [11.5 UX改善ポイント](#115-ux改善ポイント)
+
+---
+
 ## 1. 設計方針
 
 ### 1.1 技術スタック
@@ -54,16 +92,16 @@ module.exports = {
     extend: {
       colors: {
         primary: {
-          50: '#fef3c7',
-          100: '#fde68a',
-          200: '#fcd34d',
-          300: '#fbbf24',
-          400: '#f59e0b',
-          500: '#d97706',  /* メインカラー（アンバー） */
-          600: '#b45309',
-          700: '#92400e',
-          800: '#78350f',
-          900: '#451a03',
+          50: '#fefbec',   // 極淡いアンバー（背景用）
+          100: '#fef3c7',  // 淡いアンバー（ホバー）
+          200: '#fde68a',  // 明るいアンバー
+          300: '#fcd34d',  // 中間のアンバー
+          400: '#fbbf24',  // 少し深いアンバー
+          500: '#f59e0b',  /* メインカラー（アンバー） */
+          600: '#d97706',  // 深いアンバー（ボタン等）
+          700: '#b45309',  // より深いアンバー
+          800: '#92400e',  // 暗いアンバー
+          900: '#78350f',  // 最も暗いアンバー
         },
         secondary: {
           500: '#6366f1',  /* インディゴ */
@@ -126,94 +164,186 @@ use App\Models\Product;
 
 class ProductGrid extends Component
 {
-    public $categoryId = null;
-    public $searchTerm = '';
-    public $sortBy = 'sort_order';
+    public $orderMode = 'image'; // 'image' or 'number'
+    public $selectedCategoryId = null;
+    public $productCode = '';
+    public $allProducts = [];
+    public $filteredProducts = [];
     
-    // 10秒ごとに提供状態を更新
+    // 30秒ごとに提供状態を更新
     protected $listeners = ['refreshComponent' => '$refresh'];
     
-    public function mount($categoryId = null)
+    public function mount()
     {
-        $this->categoryId = $categoryId;
+        $this->loadAllProducts();
+        $this->filterProducts();
+    }
+    
+    public function loadAllProducts()
+    {
+        $this->allProducts = Product::with('categories')
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->get()
+            ->toArray();
+    }
+    
+    public function filterProducts()
+    {
+        $this->filteredProducts = collect($this->allProducts)
+            ->when($this->selectedCategoryId, fn($items) => 
+                $items->where('category_id', $this->selectedCategoryId)
+            )
+            ->sortBy('sort_order')
+            ->values()
+            ->toArray();
+    }
+    
+    public function selectCategory($categoryId)
+    {
+        $this->selectedCategoryId = $categoryId;
+        $this->filterProducts();
+    }
+    
+    public function searchByCode()
+    {
+        if ($this->orderMode === 'number' && $this->productCode) {
+            $product = collect($this->allProducts)
+                ->firstWhere('code', $this->productCode);
+                
+            if ($product) {
+                $this->dispatch('product-found', $product);
+            } else {
+                $this->dispatch('product-not-found');
+            }
+        }
     }
     
     public function render()
     {
-        $items = Product::query()
-            ->when($this->categoryId, function($q) {
-                $q->whereHas('categories', function($query) {
-                    $query->where('categories.id', $this->categoryId);
-                });
-            })
-            ->when($this->searchTerm, fn($q) => $q->search($this->searchTerm))
-            ->orderBy($this->sortBy)
-            ->get();
-            
-        return view('livewire.customer.product-grid', compact('items'));
+        return view('livewire.customer.product-grid', [
+            'products' => $this->filteredProducts,
+            'categories' => collect($this->allProducts)
+                ->groupBy('category_name')
+                ->keys()
+                ->toArray()
+        ]);
     }
 }
 ```
 
 ```blade
 {{-- resources/views/livewire/customer/product-grid.blade.php --}}
-<div wire:poll.10s class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-    @foreach($items as $item)
-        <x-mary-card shadow class="cursor-pointer hover:shadow-lg transition-shadow">
-            {{-- 画像 --}}
-            <div class="aspect-square overflow-hidden rounded-lg mb-3">
-                <img 
-                    src="{{ $item->image_url }}" 
-                    alt="{{ $item->name }}"
-                    class="w-full h-full object-cover"
-                    loading="lazy"
+<div wire:poll.30s class="space-y-4">
+    {{-- 注文方式タブ --}}
+    <div class="flex bg-gray-100 rounded-lg p-1">
+        <button 
+            wire:click="$set('orderMode', 'image')"
+            class="flex-1 py-2 px-4 rounded-md text-sm font-medium {{ $orderMode === 'image' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500' }}"
+        >
+            🖼️ 画像で選ぶ
+        </button>
+        <button 
+            wire:click="$set('orderMode', 'number')"
+            class="flex-1 py-2 px-4 rounded-md text-sm font-medium {{ $orderMode === 'number' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500' }}"
+        >
+            🔢 番号で注文
+        </button>
+    </div>
+
+    @if($orderMode === 'image')
+        {{-- 画像選択モード --}}
+        <div class="space-y-4">
+            {{-- カテゴリフィルター --}}
+            <div class="flex gap-2 overflow-x-auto pb-2">
+                <button 
+                    wire:click="selectCategory(null)"
+                    class="px-4 py-2 rounded-full whitespace-nowrap {{ !$selectedCategoryId ? 'bg-primary-500 text-white' : 'bg-gray-200 text-gray-700' }}"
                 >
-                @if($item->availability_status !== 'available')
-                    <div class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-                        <span class="text-white font-bold text-lg">
-                            @switch($item->availability_status)
-                                @case('sold_out')
-                                    売り切れ
-                                    @break
-                                @case('not_arrived')
-                                    未入荷
-                                    @break
-                                @case('preparing')
-                                    準備中
-                                    @break
-                            @endswitch
-                        </span>
-                    </div>
-                @endif
-            </div>
-            
-            {{-- 商品情報 --}}
-            <h3 class="font-semibold text-lg mb-1">{{ $item->name }}</h3>
-            <p class="text-sm text-gray-600 mb-2">{{ $item->description }}</p>
-            
-            {{-- 価格とボタン --}}
-            <div class="flex justify-between items-center mt-4">
-                <span class="text-xl font-bold text-primary-600">¥{{ number_format($item->price) }}</span>
-                @if($item->availability_status === 'available')
-                    <x-mary-button 
-                        wire:click="addToCart({{ $item->id }})"
-                        size="sm"
-                        class="btn-primary"
+                    すべて
+                </button>
+                @foreach($categories as $category)
+                    <button 
+                        wire:click="selectCategory({{ $category['id'] }})"
+                        class="px-4 py-2 rounded-full whitespace-nowrap {{ $selectedCategoryId === $category['id'] ? 'bg-primary-500 text-white' : 'bg-gray-200 text-gray-700' }}"
                     >
-                        カートに追加
-                    </x-mary-button>
-                @else
-                    <div class="text-sm text-gray-500">
-                        @if($item->availability_message)
-                            {{ $item->availability_message }}
-                        @elseif($item->expected_available_time)
-                            {{ $item->expected_available_time }}ごろ提供予定
-                        @endif
-                    </div>
-                @endif
+                        {{ $category['name'] }}
+                    </button>
+                @endforeach
             </div>
-        </x-mary-card>
-    @endforeach
+
+            {{-- 商品グリッド --}}
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                @foreach($products as $product)
+                    <x-mary-card shadow class="cursor-pointer hover:shadow-lg transition-shadow">
+                        {{-- 商品番号表示 --}}
+                        <div class="absolute top-2 left-2 bg-black bg-opacity-60 text-white text-xs px-2 py-1 rounded">
+                            {{ $product['code'] }}
+                        </div>
+                        
+                        {{-- 画像 --}}
+                        <div class="aspect-square overflow-hidden rounded-lg mb-3 relative">
+                            <img 
+                                src="{{ $product['image_url'] }}" 
+                                alt="{{ $product['name'] }}"
+                                class="w-full h-full object-cover"
+                                loading="lazy"
+                            >
+                            @if($product['availability_status'] !== 'available')
+                                <div class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+                                    <span class="text-white font-bold text-lg">
+                                        @switch($product['availability_status'])
+                                            @case('sold_out') 売り切れ @break
+                                            @case('not_arrived') 未入荷 @break
+                                            @case('preparing') 準備中 @break
+                                        @endswitch
+                                    </span>
+                                </div>
+                            @endif
+                        </div>
+                        
+                        {{-- 商品情報 --}}
+                        <h3 class="font-semibold text-lg mb-1">{{ $product['name'] }}</h3>
+                        <p class="text-sm text-gray-600 mb-2">{{ $product['description'] }}</p>
+                        
+                        {{-- 価格とボタン --}}
+                        <div class="flex justify-between items-center mt-4">
+                            <span class="text-xl font-bold text-primary-600">¥{{ number_format($product['tax_in_price']) }}</span>
+                            @if($product['availability_status'] === 'available')
+                                <x-mary-button 
+                                    wire:click="addToCart({{ $product['id'] }})"
+                                    size="sm"
+                                    class="btn-primary"
+                                >
+                                    カートに追加
+                                </x-mary-button>
+                            @endif
+                        </div>
+                    </x-mary-card>
+                @endforeach
+            </div>
+        </div>
+    @else
+        {{-- 番号入力モード --}}
+        <div class="space-y-4">
+            <div class="text-center">
+                <h3 class="text-lg font-semibold mb-4">商品番号を入力してください</h3>
+                <div class="flex gap-2 justify-center">
+                    <input 
+                        wire:model="productCode"
+                        wire:keydown.enter="searchByCode"
+                        type="text" 
+                        placeholder="例：001"
+                        class="px-4 py-2 border rounded-lg text-center text-lg font-mono"
+                        maxlength="10"
+                    >
+                    <x-mary-button wire:click="searchByCode" class="btn-primary">
+                        検索
+                    </x-mary-button>
+                </div>
+            </div>
+        </div>
+    @endif
 </div>
 ```
 
