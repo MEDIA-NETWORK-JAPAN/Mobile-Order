@@ -67,7 +67,10 @@
       "Bash(sail up:*)",
       "Bash(./vendor/bin/sail down:*)",
       "Bash(rm:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(git checkout:*)",
+      "Bash(./vendor/bin/sail artisan make:migration:*)",
+      "Bash(./vendor/bin/sail artisan migrate:status)"
     ],
     "deny": [
       "Bash(sudo:*)",
