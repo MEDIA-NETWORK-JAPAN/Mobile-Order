@@ -59,10 +59,10 @@
 
 #### **第1層: 席セッション認証（sessions）**
 - **目的**: 同席者間での注文履歴共有
-- **生成元**: **POS端末のみ**（SESSION_POS_xxx形式）
+- **生成元**: **POS端末のみ**（暗号化セキュリティ強化版）
 - **管理場所**: データベース（sessionsテーブル）
 - **識別子**: POS生成 session_id → WebでURL化
-- **有効期限**: 固定QRモード時は無期限（NULL）、都度発行モード時は3時間TTL
+- **有効期限**: 固定QRモード時は無期限（NULL）、都度発行モード時も無期限がデフォルト
 - **共有範囲**: 同じテーブルの全利用者
 
 #### **第2層: ゲストセッション認証（DB）**
@@ -207,111 +207,146 @@ class ExtendSessionOnActivity
 }
 ```
 
-## 3. ゲスト認証（モバイルAPI）
+## 3. ゲスト認証（Laravel Breezeカスタム）
 
 ### 3.1 対象ユーザー
-- **CUSTOMER**: お客様のスマートフォン
-- **HANDY**: ハンディ端末（擬似トークン使用）
+- **CUSTOMER**: お客様のスマートフォン（Webブラウザ）
+- **HANDY**: ハンディ端末（POS API経由）
 
 ### 3.2 認証フロー
 
-#### スマートフォン認証フロー
+#### スマートフォン認証フロー（Breezeセッション認証）
 ```
-1. QRコード読み取り → 席セッション取得
-2. 同意画面表示 → ハンドルキーパー・セキュリティポリシー同意
-3. 席セッション取得後 → ゲストトークン自動生成
-4. デバイス識別 → device_fingerprint設定
-5. APIアクセス時にゲストトークンを使用（Bearer形式）
-```
-
-#### ハンディ端末認証フロー
-```
-1. ハンディ → POS → 擬似トークン生成（handy_proxy_table{N}_{increment}）
-2. 擬似フィンガープリント設定（handy_device_fingerprint）
-3. POS認証（Bearer pos_system_token）でAPI送信
-4. 擬似トークンはDB記録のみ使用（認証機能なし）
+1. QRコード読み取り → 席セッション確認（URL: /order?session=xxx）
+2. デバイス識別登録 → device_fingerprint + guest_sessions作成
+3. Laravel Breezeでセッション認証 → Auth::guard('guest')->login()
+4. 同意画面表示 → ハンドルキーパー・セキュリティポリシー同意
+5. 以降のアクセス → セッションCookie認証（CSRF保護付き）
 ```
 
-### 3.3 DBセッション設定
+#### モバイルWebアプリでのBreeze使用の技術的妥当性
+
+**✅ 技術的に実現可能な理由**:
+1. **PWAアプローチ**: モバイルWebアプリとして実装、ネイティブアプリではない
+2. **ブラウザCookieサポート**: モバイルブラウザでセッションCookieが正常動作
+3. **CSRF保護**: WebフォームでCSRFトークンが自動適用
+4. **Livewire統合**: Laravel Livewireでリアルタイム更新実現
+5. **セキュリティ向上**: APIトークンよりもセッション認証が安全
+
+**⚠️ 注意事項**:
+- モバイルブラウザでのセッション永続性はアプリ切り替えでリセット
+- PWAモードでホーム画面追加することで改善可能
+
+#### ハンディ端末フロー（POS API経由）
+```
+1. ハンディ → POS → POS APIトークンで認証
+2. 注文データをPOS API経由で送信
+3. 擬似ゲスト情報でDB記録（監査用のみ）
+4. Webゲストとは完全に分離した処理
+```
+
+### 3.3 セッション設定
 ```php
-// ゲストセッションTTL管理
-'guest_session_ttl' => 1800, // 30分（expires_atカラムで管理）
-'guest_cart_ttl' => 1800,    // 30分（expires_atカラムで管理）
-'device_fingerprint_retention' => 86400, // 24時間（履歴保持期間）
+// config/session.php（ゲスト用動的設定）
+'lifetime' => 30,                    // 30分
+'cookie' => 'guest_session',         // 専用Cookie名
+'encrypt' => true,                   // 暗号化
+'http_only' => true,                 // XSS対策
+'same_site' => 'lax',               // CSRF対策
+
+// Redis設定
+'driver' => 'redis',                 // 高速セッション管理
+'connection' => 'session',
 ```
 
-### 3.4 API認証実装
+### 3.4 Breezeガード設定
 ```php
-// モバイル API コントローラー
-class MobileApiController extends Controller
-{
-    public function __construct()
-    {
-        $this->middleware('auth:sanctum');
-        $this->middleware('throttle:api');
-    }
+// config/auth.php（ゲスト認証用設定）
+'guards' => [
+    'web' => [
+        'driver' => 'session',
+        'provider' => 'users',
+    ],
     
-    protected function authenticateSession(Request $request)
-    {
-        $qrCode = $request->input('qr_code');
-        $session = Session::where('qr_code', $qrCode)
-            ->where('status', 'active')
-            ->where('expires_at', '>', now())
-            ->first();
-            
-        if (!$session) {
-            throw new AuthenticationException('無効なQRコードです');
-        }
-        
-        // 一時ユーザー作成またはゲスト認証
-        $user = User::createTemporaryCustomer($session);
-        $token = $user->createToken('mobile-session')->plainTextToken;
-        
-        return response()->json([
-            'token' => $token,
-            'session' => $session,
-            'expires_at' => $session->expires_at
-        ]);
-    }
-}
+    // ゲスト認証用カスタムガード
+    'guest' => [
+        'driver' => 'session',
+        'provider' => 'guest_sessions',
+    ],
+],
+
+'providers' => [
+    'users' => [
+        'driver' => 'eloquent',
+        'model' => App\Models\User::class,
+    ],
+    
+    // GuestSessionプロバイダー
+    'guest_sessions' => [
+        'driver' => 'eloquent',
+        'model' => App\Models\GuestSession::class,
+    ],
+],
 ```
 
-### 3.5 ゲスト認証実装
+### 3.5 ゲスト認証実装（Breezeベース）
 ```php
 // ゲストセッションコントローラー
 class GuestSessionController extends Controller
 {
-    public function create(Request $request)
+    /**
+     * ゲスト登録（device_fingerprint登録）
+     */
+    public function store(Request $request)
     {
-        $storeId = $request->input('store_id');
-        $deviceFingerprint = $request->header('X-Device-Fingerprint');
-        $sessionId = $request->input('session_id'); // 必須（QRコード経由）
+        // 席セッション確認
+        $seatSession = session('seat_session');
+        if (!$seatSession) {
+            return redirect('/')->withErrors(['error' => 'QRコードを読み取ってください']);
+        }
         
-        // ゲストトークン生成
-        $guestToken = 'guest_' . Str::random(32);
-        
-        // DBにゲストセッション保存
-        $guestSession = GuestSession::create([
-            'token' => $guestToken,
-            'device_fingerprint' => $deviceFingerprint,
-            'store_id' => $storeId,
-            'session_id' => $sessionId,
-            'language' => $request->input('language', 'ja'),
-            'agreed_policy' => false,
-            'expires_at' => now()->addMinutes(30),
-            'last_activity' => now()
+        $request->validate([
+            'device_fingerprint' => 'required|string',
+            'language' => 'nullable|string|in:ja,en,zh-CN,zh-TW,ko'
         ]);
         
-        // カート初期化は不要（必要時に作成）
+        // 既存チェック
+        $guestSession = GuestSession::where('session_id', $seatSession->id)
+            ->where('device_fingerprint', $request->device_fingerprint)
+            ->where('expires_at', '>', now())
+            ->first();
+            
+        if (!$guestSession) {
+            $guestSession = GuestSession::create([
+                'session_id' => $seatSession->id,
+                'device_fingerprint' => $request->device_fingerprint,
+                'store_id' => $seatSession->store_id,
+                'language' => $request->input('language', 'ja'),
+                'agreed_policy' => false,
+                'expires_at' => now()->addMinutes(30),
+                'last_activity' => now()
+            ]);
+        }
         
-        return response()->json([
-            'guest_token' => $guestToken,
-            'expires_in' => 1800
-        ]);
+        // Breezeセッション認証でログイン
+        Auth::guard('guest')->login($guestSession);
+        
+        // 同意画面へ
+        return redirect()->route('guest.agreement');
     }
     
-    // ゲストセッション自動延長はミドルウェアで実装
-    // 各API呼び出し時に自動的にexpires_atを30分延長
+    /**
+     * ログアウト
+     */
+    public function destroy(Request $request)
+    {
+        Auth::guard('guest')->logout();
+        
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+        
+        return redirect('/');
+    }
 }
 ```
 
@@ -602,36 +637,37 @@ class CleanupExpiredSessions extends Command
 }
 ```
 
-## 8. API認証フロー詳細
+## 8. 認証フロー詳細
 
-### 8.1 モバイル認証フロー
+### 8.1 スマートフォン認証フロー（Breezeセッション）
 ```
-1. お客様: QRコード読み取り
+1. お客様: QRコード読み取り（/order?session=xxx）
    ↓
-2. アプリ: POST /api/v1/auth/session/start
-   Body: { "qr_code": "ABC123", "customer_count": 2 }
+2. ブラウザ: GET /order?session=xxx （席セッション確認）
    ↓
-3. サーバー: 席セッション検証・取得
+3. サーバー: 席セッション検証・session保存
    ↓
-4. アプリ: POST /api/v1/auth/guest/start (席セッション取得後に自動実行)
-   Body: { "session_id": 123, "device_fingerprint": "xxx", "store_id": 1 }
+4. リダイレクト: /guest/register （デバイス識別登録画面）
    ↓
-5. サーバー: ゲストトークン生成・DB保存（guest_sessionsテーブル）
+5. ブラウザ: POST /guest/register
+   Body: { "device_fingerprint": "xxx", "language": "ja" }
    ↓
-6. レスポンス: { "guest_token": "guest_xxx", "expires_in": 1800 }
+6. サーバー: GuestSession作成・Auth::guard('guest')->login()
    ↓
-7. 以降のAPI呼び出し: Authorization: Bearer guest_xxx
+7. リダイレクト: /guest/agreement （同意画面）
+   ↓
+8. 以降のアクセス: セッションCookie認証（CSRF保護付き）
 ```
 
-### 8.2 POS認証フロー
+### 8.2 POS認証フロー（Sanctum API）
 ```
 1. POS管理者: 管理画面でAPIトークン生成
    ↓
 2. POS設定: トークンをPOSシステムに設定
    ↓
-3. POS→API: Authorization: Bearer xxx (永続トークン)
+3. POS→API: Authorization: Bearer xxx (24時間TTL)
    ↓
-4. サーバー: トークン検証 → IPアドレス確認 → API実行
+4. サーバー: Sanctumトークン検証 → API実行
 ```
 
 ## 9. ログ・監査
@@ -694,63 +730,61 @@ class AuthenticationTest extends TestCase
         ]);
         
         $response->assertRedirect('/admin/dashboard');
-        $this->assertAuthenticatedAs($admin);
+        $this->assertAuthenticatedAs($admin, 'web');
     }
     
     /** @test */
-    public function customer_can_authenticate_with_qr_code()
+    public function guest_can_authenticate_with_qr_code()
     {
         $session = Session::factory()->active()->create();
         
-        $response = $this->postJson('/api/v1/auth/session', [
-            'qr_code' => $session->qr_code,
-            'customer_count' => 2,
+        // 席セッション開始
+        $response = $this->get('/order?session=' . $session->session_id);
+        $response->assertRedirect('/guest/register');
+        
+        // ゲスト登録
+        $response = $this->post('/guest/register', [
+            'device_fingerprint' => 'test-device-123',
+            'language' => 'ja',
         ]);
         
-        $response->assertOk()
-            ->assertJsonStructure(['token', 'session_id', 'expires_at']);
+        $response->assertRedirect('/guest/agreement');
+        $this->assertAuthenticated('guest');
     }
     
     /** @test */
-    public function admin_session_extends_on_activity()
+    public function guest_session_extends_on_activity()
     {
-        $admin = User::factory()->admin()->create();
-        $this->actingAs($admin);
+        $guestSession = GuestSession::factory()->create([
+            'expires_at' => now()->addMinutes(30)
+        ]);
+        
+        $this->actingAs($guestSession, 'guest');
         
         // 初回アクセス
-        $this->get('/admin/dashboard')
+        $this->get('/menu')
             ->assertOk();
             
-        // セッションに最終アクティビティが記録される
-        $this->assertEquals(now()->timestamp, session('last_activity'));
-        
-        // 1時間後のアクセス（セッション延長される）
-        $this->travel(1)->hours();
-        $this->get('/admin/products')
+        // 25分後のアクセス（セッション延長される）
+        $this->travel(25)->minutes();
+        $this->get('/menu')
             ->assertOk();
             
-        // 最終アクティビティが更新される
-        $this->assertEquals(now()->timestamp, session('last_activity'));
-        
-        // さらに2時間後のアクセス（タイムアウト）
-        $this->travel(2)->hours();
-        $this->get('/admin/products')
-            ->assertRedirect('/login')
-            ->assertSessionHas('error', 'セッションがタイムアウトしました');
+        // ゲストセッションが延長されることを確認
+        $this->assertTrue($guestSession->fresh()->expires_at > now()->addMinutes(25));
     }
     
     /** @test */
-    public function pos_system_requires_valid_ip_address()
+    public function pos_system_can_authenticate_with_sanctum()
     {
-        $posUser = User::factory()->posSystem()->create();
-        $token = $posUser->createToken('pos-api')->plainTextToken;
+        $pos = POSSystem::factory()->create();
+        $token = $pos->createToken('pos-api')->plainTextToken;
         
         $response = $this->withHeaders([
             'Authorization' => 'Bearer ' . $token
-        ])->from('192.168.999.999') // 無効IP
-          ->getJson('/api/v1/pos/orders');
+        ])->getJson('/api/v1/pos/health-check');
           
-        $response->assertStatus(403);
+        $response->assertOk();
     }
 }
 ```

@@ -170,7 +170,7 @@ class ProductGrid extends Component
     public $allProducts = [];
     public $filteredProducts = [];
     
-    // 30秒ごとに提供状態を更新
+    // 60秒ごとに提供状態を更新
     protected $listeners = ['refreshComponent' => '$refresh'];
     
     public function mount()
@@ -234,7 +234,7 @@ class ProductGrid extends Component
 
 ```blade
 {{-- resources/views/livewire/customer/product-grid.blade.php --}}
-<div wire:poll.30s class="space-y-4">
+<div wire:poll.60s class="space-y-4">
     {{-- 注文方式タブ --}}
     <div class="flex bg-gray-100 rounded-lg p-1">
         <button 
@@ -689,6 +689,95 @@ public function loadItems()
 <div wire:loading>
     <x-mary-loading />
 </div>
+```
+
+### 7.3 SPA Navigation実装パターン
+
+#### 基本的なwire:navigate使用
+```blade
+{{-- 内部リンクにwire:navigateを追加 --}}
+<nav>
+    <a href="/menu" wire:navigate>メニュー</a>
+    <a href="/cart" wire:navigate>カート</a>
+    <a href="/order-history" wire:navigate>注文履歴</a>
+</nav>
+
+{{-- ボタンでの画面遷移 --}}
+<button onclick="window.location.href='/menu'" wire:navigate>
+    メニューに戻る
+</button>
+```
+
+#### Prefetch戦略
+```blade
+{{-- デフォルト: クリック時のプリフェッチ --}}
+<a href="/product/{{ $product->id }}" wire:navigate>
+    {{ $product->name }}
+</a>
+
+{{-- ホバー時のプリフェッチ（60ms後） --}}
+<a href="/product/{{ $product->id }}" wire:navigate.hover>
+    {{ $product->name }}
+</a>
+```
+
+#### プログラマティックナビゲーション
+```php
+// Livewireコンポーネント内でのリダイレクト
+public function proceedToCart()
+{
+    // SPAライクな遷移を維持
+    $this->redirect('/cart', navigate: true);
+}
+
+public function completeOrder()
+{
+    // 注文完了後の遷移
+    $this->redirect('/order-complete', navigate: true);
+}
+```
+
+#### ブラウザバック無効化との統合
+```blade
+{{-- 注文フロー内でのナビゲーション --}}
+<div x-data="{ 
+    init() {
+        // ブラウザバック無効化
+        history.pushState(null, null, location.href);
+        window.addEventListener('popstate', (e) => {
+            history.pushState(null, null, location.href);
+        });
+    }
+}">
+    <a href="/checkout" wire:navigate>注文確定へ進む</a>
+</div>
+```
+
+#### 永続要素の実装（@persist）
+```blade
+{{-- カート情報を画面遷移間で永続化 --}}
+@persist('cart-summary')
+<div class="cart-summary">
+    <span>{{ $cartItemCount }}点</span>
+    <span>¥{{ number_format($cartTotal) }}</span>
+</div>
+@endpersist
+
+{{-- オーディオプレーヤーの永続化 --}}
+@persist('bgm-player')
+<audio id="bgm" autoplay loop>
+    <source src="/audio/bgm.mp3" type="audio/mpeg">
+</audio>
+@endpersist
+```
+
+#### アセットトラッキング
+```blade
+{{-- Vite使用時は自動でdata-navigate-trackが付与される --}}
+@vite(['resources/css/app.css', 'resources/js/app.js'])
+
+{{-- 手動でのトラッキング設定 --}}
+<script src="/js/custom.js?v={{ config('app.version') }}" data-navigate-track></script>
 ```
 
 ## 8. アニメーション

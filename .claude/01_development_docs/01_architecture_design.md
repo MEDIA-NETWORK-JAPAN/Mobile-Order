@@ -95,7 +95,7 @@ Mobile Order System（mobile-order）
 │                    POSシステム（セッションID生成元）                 │
 │  ┌─────────────────────────────────────────────────────────────┐  │
 │  │  Delphiアプリケーション + FireBirdデータベース  │  │
-│  │  - 席セッションID生成 (SESSION_POS_xxx)        │  │
+│  │  - 暗号化席セッションID生成（セキュリティ強化版）  │  │
 │  │  - ハンディ注文処理                            │  │
 │  │  - 障害時 cloud_synced=FALSE 管理              │  │
 │  │  - 復旧時自動同期                              │  │
@@ -125,7 +125,7 @@ Mobile Order System（mobile-order）
 
 ### 2.2 シンプル化されたアーキテクチャパターン
 - **POS中心**: 全てのセッション管理をPOSで一元化
-- **API最小化**: 3個のコアAPIのみでシンプル化
+- **API最小化**: 3個のコアAPI + 同期検証APIでシンプル化
 - **障害復旧**: cloud_syncedフラグで簡素な管理
 - **Model**: Eloquent ORMによるデータアクセス
 - **View**: Blade + Livewire コンポーネント
@@ -142,8 +142,8 @@ Mobile Order System（mobile-order）
 - **Middleware**: 認証・認可・障害検知
 
 ### 3.2 ビジネス層（シンプル化）
-- **POS同期サービス**: 障害復旧・データ同期処理
-- **セッションサービス**: POS生成ID管理・2層認証
+- **POS同期サービス**: 障害復旧・データ同期・同期検証処理
+- **セッションサービス**: POS生成ID管理・2層認証・全カラム送信方式対応
 - **注文サービス**: モバイル・ハンディ注文処理
 - **Translation Service**: Dify連携多言語翻訳サービス
 - **Form Request**: バリデーションルール
@@ -153,7 +153,7 @@ Mobile Order System（mobile-order）
 - **セッションモデル**: POS生成IDとWebセッションの統一管理
 - **同期モデル**: cloud_syncedフラグでシンプル管理
 - **Eloquent Models**: データベース操作
-- **DBモデル**: ゲストセッション・カート管理（guest_sessions, cartsテーブル）
+- **DBモデル**: ゲストセッション管理（guest_sessionsテーブル）・Redisカート
 - **Migration**: スキーマ管理
 - **Seeder**: 初期データ投入
 
@@ -170,7 +170,7 @@ Mobile Order System（mobile-order）
 **第1層: 席セッション認証**
 - **対象**: QRコードから始まる席情報
 - **方式**: データベースセッション管理（sessionsテーブル）
-- **有効期限**: 固定QRモード時は無期限（NULL）、都度発行モード時は3時間TTL
+- **有効期限**: 固定QRモード時は無期限（NULL）、都度発行モード時も無期限がデフォルト
 - **目的**: 同席者間での注文履歴共有
 
 **第2層: ゲストセッション認証**
@@ -258,11 +258,16 @@ POS_SYSTEM: データ同期、注文取得
 ## 7. パフォーマンス設計
 
 ### 7.1 キャッシュ戦略
-- **DBセッション**: ゲストセッション、カート情報をDBで管理
-- **ゲストセッション**: DBでカート情報を保存（30分TTL、自動延長）
-- **Model Cache**: 頻繁にアクセスするマスタデータ
-- **Query Cache**: 重いクエリ結果のキャッシュ
-- **在庫状態キャッシュ**: 5秒TTL（お客様向けポーリング対応）
+
+**Redis使用領域（限定的活用方針）**
+- **セッション管理**: Laravel標準セッション（Redis活用で高速化）
+- **カートデータ**: 一時的なカート状態（Redis管理、TTL: 30分）
+- **メニューキャッシュ**: 商品データキャッシュ（Redis管理、変更頻度低）
+
+**データベース管理領域**
+- **ゲストセッション**: guest_sessionsテーブルで永続化（Laravel Breezeカスタム認証）
+- **注文・商品マスター**: 完全DB管理（Redis使用なし）
+- **セッション情報**: sessionsテーブルで席管理
 
 ### 7.2 データベース最適化
 - **Eager Loading**: N+1問題回避
@@ -273,6 +278,9 @@ POS_SYSTEM: データ同期、注文取得
 - **Lazy Loading**: 画像の遅延読み込み
 - **WebP**: モバイル向け画像最適化
 - **Vite**: アセットのバンドル・最適化
+- **SPA Navigation**: Livewire 3の`wire:navigate`によるSPAライクな画面遷移
+- **Prefetch戦略**: hover時のプリフェッチで体感速度向上
+- **Browser Back Prevention**: History API制御による注文フロー保護
 
 ## 8. セキュリティ設計
 
@@ -334,9 +342,9 @@ POS_SYSTEM: データ同期、注文取得
 ## 12. カート管理設計
 
 ### 12.1 個人管理方式（同期なし）
-- **個人カート管理**: DB（cartsテーブル、30分TTL、自動延長）
+- **個人カート管理**: Redis（guest_cart:{token}、30分TTL、自動延長）
   - guest_sessionsテーブル - セッション情報（DB管理）
-  - cartsテーブル - カートアイテム（DB管理、同期機能なし）
+  - Redisカート - カートアイテム（Redis管理、同期機能なし）
   - ハンディ端末はDB使用なし（POS直接処理）
 - **永続化**: cart_logsテーブル
   - 全操作履歴（add/remove/update/clear）

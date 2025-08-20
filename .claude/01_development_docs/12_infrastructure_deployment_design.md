@@ -80,7 +80,7 @@ services:
             - sail
         depends_on:
             - mysql
-            # - redis  # Redis削除によりコメントアウト
+            - redis  # Redis復活
             - mailpit
     
     mysql:
@@ -104,19 +104,19 @@ services:
             retries: 3
             timeout: 5s
     
-    # redis:
-    #     image: 'redis:alpine'
-    #     ports:
-    #         - '${FORWARD_REDIS_PORT:-6379}:6379'
-    #     volumes:
-    #         - 'sail-redis:/data'
-    #     networks:
-    #         - sail
-    #     healthcheck:
-    #         test: ["CMD", "redis-cli", "ping"]
-    #         retries: 3
-    #         timeout: 5s
-    # Redisを使用しないためコメントアウト
+    redis:
+        image: 'redis:alpine'
+        ports:
+            - '${FORWARD_REDIS_PORT:-6379}:6379'
+        volumes:
+            - 'sail-redis:/data'
+        networks:
+            - sail
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            retries: 3
+            timeout: 5s
+        # 限定的なRedis使用（セッション、カート、メニューキャッシュ）
     
     mailpit:
         image: 'axllent/mailpit:latest'
@@ -133,8 +133,8 @@ networks:
 volumes:
     sail-mysql:
         driver: local
-    # sail-redis:
-    #     driver: local  # Redis使用しないためコメントアウト
+    sail-redis:
+        driver: local  # Redisボリューム
 ```
 
 ### 2.2 開発環境用設定
@@ -154,14 +154,15 @@ DB_DATABASE=mobile_order
 DB_USERNAME=sail
 DB_PASSWORD=password
 
-# REDIS_HOST=redis          # Redis使用しないためコメントアウト
-# REDIS_PASSWORD=null       # Redis使用しないためコメントアウト
-# REDIS_PORT=6379           # Redis使用しないためコメントアウト
+REDIS_HOST=redis
+REDIS_PASSWORD=null
+REDIS_PORT=6379
 
-CACHE_DRIVER=file            # Redisからファイルキャッシュに変更
+# Redisパフォーマンス用途（3つの専用キー）
+CACHE_DRIVER=redis            # メニューキャッシュ用
 FILESYSTEM_DISK=local
-QUEUE_CONNECTION=database     # Redisからデータベースキューに変更
-SESSION_DRIVER=database       # Redisからデータベースセッションに変更
+QUEUE_CONNECTION=database     # Queueはデータベースを維持
+SESSION_DRIVER=redis          # ゲストセッション管理用
 SESSION_LIFETIME=120
 
 MAIL_MAILER=smtp
@@ -203,7 +204,7 @@ graph TB
     subgraph "Data Tier"
         DB_MASTER[MySQL Master]
         DB_SLAVE[MySQL Slave]
-        %% REDIS[Redis Cluster] - 使用しないためコメントアウト
+        REDIS[Redis Server<br/>セッション・カート・メニュー]
     end
     
     subgraph "Storage"
@@ -226,10 +227,9 @@ graph TB
     APP2 --> DB_MASTER
     APP1 --> DB_SLAVE
     APP2 --> DB_SLAVE
-    %% APP1 --> REDIS - Redis使用しないためコメントアウト
-    %% APP2 --> REDIS - Redis使用しないためコメントアウト
+    APP1 --> REDIS
+    APP2 --> REDIS
     QUEUE --> DB_MASTER
-    %% QUEUE --> REDIS - Redis使用しないためコメントアウト
     APP1 --> S3
     APP2 --> S3
     DB_MASTER --> DB_SLAVE
@@ -275,16 +275,16 @@ Services:
   - MySQL 8.0 (Slave)
 ```
 
-#### ~~Redisサーバー~~ （削除）
+#### Redisサーバー（限定的使用）
 ```yaml
-# Redis使用しないためサーバー不要
-# 以前の構成: Redis Cluster (3 nodes)
-# CPU: 2 vCPU per node
-# Memory: 4GB RAM per node  
-# Storage: 20GB SSD per node
-# OS: Ubuntu 20.04 LTS
-# Services:
-#   - Redis 6.0+ (Cluster mode)
+# Redis Server (限定的なパフォーマンス用途)
+CPU: 2 vCPU
+Memory: 4GB RAM
+Storage: 20GB SSD
+OS: Ubuntu 20.04 LTS
+Services:
+  - Redis 6.0+ (Single instance)
+  - 用途: セッション、カート、メニューキャッシュのみ
 ```
 
 ### 3.3 本番環境Docker構成
@@ -297,7 +297,7 @@ RUN apk add --no-cache \
     nginx \
     supervisor \
     mysql-client \
-    # redis \  # Redis使用しないためコメントアウト
+    redis \  # Redisクライアントライブラリ
     git \
     curl \
     libpng-dev \
@@ -369,12 +369,11 @@ jobs:
           - 3306:3306
         options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
       
-      # redis:
-      #   image: redis
-      #   ports:
-      #     - 6379:6379
-      #   options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=3
-      # Redis使用しないためコメントアウト
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=3
     
     steps:
     - uses: actions/checkout@v3
@@ -406,8 +405,8 @@ jobs:
         DB_DATABASE: mobile_order_test
         DB_USERNAME: root
         DB_PASSWORD: ''
-        # REDIS_HOST: 127.0.0.1  # Redis使用しないためコメントアウト
-        # REDIS_PORT: 6379        # Redis使用しないためコメントアウト
+        REDIS_HOST: 127.0.0.1
+        REDIS_PORT: 6379
   
   build:
     needs: test
@@ -569,7 +568,7 @@ class HealthController extends Controller
     {
         $checks = [
             'database' => $this->checkDatabase(),
-            // 'redis' => $this->checkRedis(), // Redis使用しないためコメントアウト
+            'redis' => $this->checkRedis(), // Redisヘルスチェック
             'storage' => $this->checkStorage(),
             'queue' => $this->checkQueue(),
         ];
@@ -593,15 +592,15 @@ class HealthController extends Controller
         }
     }
     
-    // private function checkRedis(): array  // Redis使用しないためコメントアウト
-    // {
-    //     try {
-    //         Redis::ping();
-    //         return ['status' => 'ok', 'message' => 'Redis connection successful'];
-    //     } catch (Exception $e) {
-    //         return ['status' => 'error', 'message' => $e->getMessage()];
-    //     }
-    // }
+    private function checkRedis(): array
+    {
+        try {
+            Redis::ping();
+            return ['status' => 'ok', 'message' => 'Redis connection successful'];
+        } catch (Exception $e) {
+            return ['status' => 'error', 'message' => $e->getMessage()];
+        }
+    }
 }
 ```
 
@@ -738,8 +737,8 @@ ufw allow 443/tcp
 # MySQL (アプリケーションサーバーからのみ)
 ufw allow from 10.0.1.0/24 to any port 3306
 
-# Redis (アプリケーションサーバーからのみ) - Redis使用しないためコメントアウト
-# ufw allow from 10.0.1.0/24 to any port 6379
+# Redis (アプリケーションサーバーからのみ)
+ufw allow from 10.0.1.0/24 to any port 6379
 
 # Enable UFW
 ufw --force enable
@@ -893,7 +892,7 @@ echo "=== Daily Maintenance Started ==="
 # 1. システム状態確認
 echo "Checking system status..."
 docker-compose ps
-systemctl status nginx mysql  # redis削除
+systemctl status nginx mysql redis
 
 # 2. ディスク使用量確認
 echo "Checking disk usage..."

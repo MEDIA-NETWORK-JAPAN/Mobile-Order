@@ -108,21 +108,21 @@ DB_PASSWORD=password
 # Broadcast設定
 BROADCAST_DRIVER=log
 
-# キャッシュ設定
-CACHE_DRIVER=file  # Redisからファイルベースに変更
+# Redis設定（限定的使用）
+REDIS_HOST=redis
+REDIS_PASSWORD=null
+REDIS_PORT=6379
+
+# キャッシュ設定（メニューキャッシュ用）
+CACHE_DRIVER=redis
 FILESYSTEM_DISK=local
 
-# キュー設定
-QUEUE_CONNECTION=database  # RedisからDBキューに変更
+# キュー設定（データベースを保持）
+QUEUE_CONNECTION=database
 
-# セッション設定
-SESSION_DRIVER=database  # RedisからDBセッションに変更
+# セッション設定（ゲストセッション用）
+SESSION_DRIVER=redis
 SESSION_LIFETIME=120
-
-# Redis設定（使用しないためコメントアウト）
-# REDIS_HOST=redis
-# REDIS_PASSWORD=null
-# REDIS_PORT=6379
 
 # メール設定（開発用）
 MAIL_MAILER=smtp

@@ -66,7 +66,8 @@
       "Bash(sail down:*)",
       "Bash(sail up:*)",
       "Bash(./vendor/bin/sail down:*)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "WebSearch"
     ],
     "deny": [
       "Bash(sudo:*)",

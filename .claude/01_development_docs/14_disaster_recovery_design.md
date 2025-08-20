@@ -86,7 +86,7 @@
 
 ### 2.1 スマホ注文フロー
 ```
-1. POS: 席番号入力 → セッションID生成(SESSION_POS_xxx)
+1. POS: 席番号入力 → 暗号化セッションID生成（セキュリティ強化版）
 2. POS → Web: URL発行リクエスト
 3. Web: セッションDB登録 → URL生成
 4. POS: QRコード印刷
@@ -98,7 +98,7 @@
 ### 2.2 ハンディ注文フロー
 ```
 1. ハンディ → POS: 注文データ受信
-2. POS: セッションID生成(SESSION_POS_xxx)
+2. POS: 暗号化セッションID生成（セキュリティ強化版）
 3. POS → Web: 注文データ同期
 4. POS: FireBird記録(cloud_synced=TRUE)
 5. 厨房印字・調理・提供・会計
@@ -230,8 +230,8 @@ POST /api/pos/sync-sessions
 ```json
 {
   "unsynced_sessions": [
-    "SESSION_POS_20240101_140000_12_001",
-    "SESSION_POS_20240101_141500_15_001"
+    "SESSION_POS_TEMP_12_1692345678_a1b2c3d4",
+    "SESSION_POS_FIXED_a7b3c9d4e5f61829_15"
   ]
 }
 ```
@@ -243,7 +243,7 @@ POST /api/pos/sync-orders
 {
   "orders": [
     {
-      "session_id": "SESSION_POS_xxx",
+      "session_id": "SESSION_POS_TEMP_12_1692345678_a1b2c3d4",
       "order_data": {...}
     }
   ]
@@ -255,7 +255,7 @@ POST /api/pos/sync-orders
 POST /api/pos/request-url
 ```json
 {
-  "session_id": "SESSION_POS_xxx",
+  "session_id": "SESSION_POS_TEMP_12_1692345678_a1b2c3d4",
   "table_number": "08"
 }
 ```

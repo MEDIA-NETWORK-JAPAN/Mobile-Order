@@ -15,7 +15,6 @@
   - [4.1 基本フロー](#41-基本フロー)
   - [4.2 管理画面の特徴](#42-管理画面の特徴)
   - [4.3 管理画面URLの設定方法](#43-管理画面urlの設定方法)
-  - [4.4 複数店舗運用時のURL管理（パスベース方式）](#44-複数店舗運用時のurl管理パスベース方式)
 - [5. 状態管理](#5-状態管理)
   - [5.1 セッション管理](#51-セッション管理)
   - [5.2 画面間データ引き継ぎ](#52-画面間データ引き継ぎ)
@@ -80,13 +79,13 @@
 #### 技術的フロー説明
 1. **QRコード読み取り**: カメラアプリで `https://example.com/s/{session_token}` をGET取得
 2. **初回画面表示**: URLルーティングで人数入力画面等を表示
-3. **セッション検証**: Livewire/JavaScript で `POST /api/v1/auth/session/start` を自動実行
-4. **ゲストセッション**: 成功後に `POST /api/v1/auth/guest/start` でゲストトークン生成
+3. **席セッション検証**: URLパラメータからsession_idを取得してDB検証
+4. **ゲスト認証**: Laravel Breezeカスタム認証で `POST /guest/register` でゲストセッション作成
 
 ```mermaid
 graph TD
     Start([QRコードスキャン]) -->|カメラアプリ GET| Landing[初回画面表示]
-    Landing -->|Livewire自動処理| Validate{セッション検証API}
+    Landing -->|URLパラメータ検証| Validate{席セッションDB検証}
     Validate -->|有効| C016[合意画面]
     C016 -->|同意| AgreementCheck{人数設定確認}
     AgreementCheck -->|人数未設定| C001[人数入力画面]
@@ -429,224 +428,6 @@ Route::prefix(config('app.admin_prefix'))->middleware(['auth', 'admin'])->group(
 4. **アクセス監視**: 不審なアクセスパターンの検知と記録
 5. **URL共有禁止**: メールやチャットでのURL共有は避ける
 
-### 4.4 複数店舗運用時のURL管理（パスベース方式）
-```
-店舗A: https://example.com/store-a/ctrl-x7k9
-店舗B: https://example.com/store-b/ctrl-m2p4
-```
-
-**データベース設計：**
-```php
-// stores テーブル
-Schema::create('stores', function (Blueprint $table) {
-    $table->id();
-    $table->string('code')->unique();  // 店舗コード（変更不可）
-    $table->string('name');
-    $table->json('settings');
-    $table->timestamps();
-});
-
-// store_admin_urls テーブル（URL履歴管理）
-Schema::create('store_admin_urls', function (Blueprint $table) {
-    $table->id();
-    $table->foreignId('store_id')->constrained()->onDelete('cascade');
-    $table->string('url_prefix');  // 管理画面URLプレフィックス
-    $table->boolean('is_active')->default(true);
-    $table->timestamp('activated_at');
-    $table->timestamp('deactivated_at')->nullable();
-    $table->foreignId('created_by')->nullable();  // 変更者
-    $table->string('change_reason')->nullable();  // 変更理由
-    $table->timestamps();
-    
-    $table->unique(['store_id', 'url_prefix']);  // 同一店舗で重複URL禁止
-    $table->index(['store_id', 'is_active']);
-});
-```
-
-**管理ポータルでのURL変更機能：**
-```php
-// Livewire Component: StoreUrlManager.php
-class StoreUrlManager extends Component
-{
-    public Store $store;
-    public $newUrlPrefix = '';
-    public $changeReason = '';
-    public $confirmChange = false;
-    
-    public function generateRandomUrl()
-    {
-        $this->newUrlPrefix = 'ctrl-' . Str::random(8);
-    }
-    
-    public function validateUrl()
-    {
-        $this->validate([
-            'newUrlPrefix' => [
-                'required',
-                'regex:/^[a-z0-9\-]+$/',  // 英小文字、数字、ハイフンのみ
-                'min:8',
-                'max:32',
-                Rule::unique('store_admin_urls', 'url_prefix')
-                    ->where('store_id', '!=', $this->store->id)
-            ],
-            'changeReason' => 'required|min:10'
-        ]);
-    }
-    
-    public function changeUrl()
-    {
-        DB::transaction(function () {
-            // 現在のURLを無効化
-            $this->store->adminUrls()
-                ->where('is_active', true)
-                ->update([
-                    'is_active' => false,
-                    'deactivated_at' => now()
-                ]);
-            
-            // 新しいURLを有効化
-            $this->store->adminUrls()->create([
-                'url_prefix' => $this->newUrlPrefix,
-                'is_active' => true,
-                'activated_at' => now(),
-                'created_by' => auth()->id(),
-                'change_reason' => $this->changeReason
-            ]);
-            
-            // 管理者全員に通知
-            $this->notifyAdmins();
-            
-            // キャッシュクリア（DBキャッシュのため特定キーのクリア）
-            Cache::forget('store-urls-' . $this->store->id);
-        });
-        
-        session()->flash('message', 'URL変更完了。新URL: /' . $this->store->code . '/' . $this->newUrlPrefix);
-    }
-}
-```
-
-**管理画面UI：**
-```blade
-{{-- 店舗設定画面内のURL管理セクション --}}
-<div class="card">
-    <h3>管理画面URL設定</h3>
-    
-    <div class="current-url">
-        <label>現在のURL:</label>
-        <code>{{ url($store->code . '/' . $store->currentAdminUrl->url_prefix) }}</code>
-        <button wire:click="copyToClipboard" class="btn-sm">コピー</button>
-    </div>
-    
-    <div class="change-url-form">
-        <label>新しいURLプレフィックス:</label>
-        <div class="input-group">
-            <span>/{{ $store->code }}/</span>
-            <input wire:model="newUrlPrefix" 
-                   placeholder="ctrl-xxxxxxxx"
-                   pattern="[a-z0-9\-]+"
-                   minlength="8"
-                   maxlength="32">
-            <button wire:click="generateRandomUrl" class="btn-secondary">
-                ランダム生成
-            </button>
-        </div>
-        @error('newUrlPrefix') <span class="error">{{ $message }}</span> @enderror
-        
-        <label>変更理由（監査ログ用）:</label>
-        <textarea wire:model="changeReason" required></textarea>
-        @error('changeReason') <span class="error">{{ $message }}</span> @enderror
-        
-        @if($confirmChange)
-            <div class="alert alert-warning">
-                <p>本当にURLを変更しますか？</p>
-                <p>変更後、全管理者に新URLが通知されます。</p>
-                <button wire:click="changeUrl" class="btn-danger">変更実行</button>
-                <button wire:click="$set('confirmChange', false)" class="btn-secondary">キャンセル</button>
-            </div>
-        @else
-            <button wire:click="$set('confirmChange', true)" class="btn-primary">
-                URL変更
-            </button>
-        @endif
-    </div>
-    
-    <div class="url-history">
-        <h4>URL変更履歴</h4>
-        <table>
-            <thead>
-                <tr>
-                    <th>URL</th>
-                    <th>有効期間</th>
-                    <th>変更者</th>
-                    <th>変更理由</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach($store->adminUrls()->orderBy('created_at', 'desc')->limit(10)->get() as $url)
-                    <tr class="{{ $url->is_active ? 'active' : '' }}">
-                        <td><code>/{{ $store->code }}/{{ $url->url_prefix }}</code></td>
-                        <td>
-                            {{ $url->activated_at->format('Y/m/d H:i') }}
-                            @if($url->deactivated_at)
-                                〜 {{ $url->deactivated_at->format('Y/m/d H:i') }}
-                            @else
-                                〜 (現在有効)
-                            @endif
-                        </td>
-                        <td>{{ $url->creator->name ?? 'システム' }}</td>
-                        <td>{{ $url->change_reason }}</td>
-                    </tr>
-                @endforeach
-            </tbody>
-        </table>
-    </div>
-</div>
-```
-
-**セキュリティ機能：**
-```php
-// URL変更時の通知
-class AdminUrlChangedNotification extends Notification
-{
-    public function toMail($notifiable)
-    {
-        return (new MailMessage)
-            ->subject('【重要】管理画面URLが変更されました')
-            ->line('管理画面のURLが変更されました。')
-            ->line('新しいURL: ' . $this->newUrl)
-            ->line('変更理由: ' . $this->changeReason)
-            ->action('新しい管理画面へ', $this->newUrl)
-            ->line('このメールは削除せず保管してください。');
-    }
-}
-
-// 不正アクセス検知
-class DetectInvalidAdminAccess
-{
-    public function handle($request, Closure $next)
-    {
-        $path = $request->path();
-        
-        // 無効なURL or 存在しない店舗へのアクセス
-        if ($this->isInvalidAdminUrl($path)) {
-            // ログ記録
-            Log::warning('Invalid admin access attempt', [
-                'ip' => $request->ip(),
-                'path' => $path,
-                'user_agent' => $request->userAgent()
-            ]);
-            
-            // 一定回数以上でアクセス制限
-            $this->checkAndLimitAccess($request->ip());
-            
-            abort(404);
-        }
-        
-        return $next($request);
-    }
-}
-```
-
 ## 5. 状態管理
 
 ### 5.1 セッション管理
@@ -655,7 +436,7 @@ class DetectInvalidAdminAccess
 |--------------|------|-----|--------|
 | 席セッション | QRコード単位の管理 | 3時間 | DB (sessions) |
 | ゲストセッション | 個人端末識別 | 30分（自動延長） | DB (guest_sessions) |
-| カート情報 | 注文前の商品 | 30分（自動延長） | DB (carts + cart_logs) |
+| カート情報 | 注文前の商品 | 30分（自動延長） | Redis (guest_cart:{token} + DB cart_logs) |
 | 管理者セッション | 管理画面認証 | 3時間 | セッション/Cookie |
 
 ### 5.2 画面間データ引き継ぎ
@@ -697,10 +478,10 @@ QRコード読み取り
 #### お客様向け画面
 
 **在庫状態更新（メニュー画面）**
-- **間隔**: 30秒
+- **間隔**: 60秒
 - **対象**: 商品の availability_status
-- **理由**: 売り切れ情報の適度な更新（即座性より負荷軽減優先）
-- **実装**: `wire:poll.30s` + `wire:poll.visible`
+- **理由**: 売り切れ情報の定期更新（POSとの同期維持）
+- **実装**: `wire:poll.60s` + `wire:poll.visible`
 - **補完**: 注文時の在庫チェックで最終確認
 
 **注文ステータス更新（注文履歴画面）**
@@ -736,7 +517,7 @@ QRコード読み取り
 **負荷軽減対策**
 ```php
 // 画面表示時のみポーリング（お客様向けのみ）
-wire:poll.visible.30s  // 在庫状態
+wire:poll.visible.60s  // 在庫状態
 wire:poll.visible.60s  // 注文ステータス
 
 // 注文がある場合のみポーリング

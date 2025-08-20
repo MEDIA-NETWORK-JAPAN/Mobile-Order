@@ -33,8 +33,8 @@
   - [3.17 cart_logs（カート操作ログ）](#317-cart_logsカート操作ログ)
   - [3.18 change_logs（変更履歴）](#318-change_logs変更履歴)
   - [3.19 system_settings（システム設定）](#319-system_settingsシステム設定)
-  - [3.20 store_admin_urls（店舗管理画面URL履歴）](#320-store_admin_urls店舗管理画面url履歴)
-  - [3.21 guest_identifiers（ゲスト識別情報）](#321-guest_identifiersゲスト識別情報)
+  - [3.20 pos_health_checks（POSヘルスチェック）](#320-pos_health_checksposヘルスチェック)
+  - [3.21 failed_jobs（失敗ジョブ管理）](#321-failed_jobs失敗ジョブ管理)
 - [4. インデックス戦略と障害復旧](#4-インデックス戦略と障害復旧)
   - [4.1 主要検索パターン（更新版）](#41-主要検索パターン更新版)
   - [4.2 複合インデックス（更新版）](#42-複合インデックス更新版)
@@ -80,8 +80,10 @@
 - **ソフトデリート**: 履歴保持が必要なテーブルは`deleted_at`
 - **変更ログ**: Webサーバー主導の変更を`change_logs`テーブルでPOS同期用に記録
 - **障害復旧**: `cloud_synced`フラグでシンプル管理
-- **セッション管理**: 全ての席セッションIDはPOS端末でのみ生成（SESSION_POS_xxx形式）
-- **QRコード運用**: 固定モード（無期限）/都度発行モード（3時間TTL）のハイブリッド対応
+- **同期検証**: POST /verify APIでPOSとWebのデータ整合性を定期確認
+- **変更ログ取得**: is_synced=FALSEのレコードのみを5秒間隔ポーリングで取得
+- **セッション管理**: 全ての席セッションIDはPOS端末でのみ生成（暗号化セキュリティ強化版）
+- **QRコード運用**: 固定モード（無期限）/都度発行モード（無期限がデフォルト）のハイブリッド対応
 
 ## 2. テーブル一覧
 
@@ -93,7 +95,7 @@
 ### 2.2 店舗・セッション管理
 - `stores` - 店舗情報（QRコード運用モード設定含む）
 - `sessions` - 席管理・セッション管理（全てPOS端末で生成、固定/都度発行モード対応）
-- **ゲストセッション** - DBで管理（guest_sessionsテーブル、TTL自動削除）
+- **ゲストセッション** - DBで管理（guest_sessionsテーブル、expires_at管理）
 - **障害復旧** - FireBird側の`cloud_synced`フラグで管理
 
 ### 2.3 商品・メニュー管理
@@ -111,12 +113,19 @@
 - `order_items` - 注文明細
 - `order_item_options` - 注文商品のオプション選択
 
-### 2.5 カート管理
-- `carts` - カート状態管理（リアルタイムカート情報）
-- `guest_sessions` - ゲストセッション管理（デバイス識別・同意状態）
+### 2.5 カート・セッション管理
+- **カート**: Redisで管理（高速・一時的データ、TTL: 30分）
+- `guest_sessions` - ゲストセッション認証情報（Breeze用）
 - `cart_logs` - カート操作ログ（監査・分析用）
 
-### 2.6 システム管理
+### 2.6 Redis活用領域（限定使用）
+- **Laravelセッション**: フレームワーク標準セッション（管理者ログイン等）
+- **カートデータ**: 一時的なカート状態（guest_cart:{token}、TTL: 30分）
+- **メニューキャッシュ**: 商品データキャッシュ（menu_cache:{store_id}、変更頻度低）
+
+**※重要: ゲストセッション（guest_sessions）はDBのみで管理、Redisは使用しない**
+
+### 2.7 システム管理
 - `change_logs` - Webサーバー主導の変更履歴（POS同期用）
 - `system_settings` - システム設定
 - `pos_health_checks` - POSヘルスチェック管理
@@ -144,10 +153,42 @@ CREATE TABLE users (
     INDEX idx_users_email (email),
     INDEX idx_users_role (role),
     INDEX idx_users_store_id (store_id)
-) ENGINE=InnoDB COMMENT='ユーザー';
+) ENGINE=InnoDB COMMENT='ユーザー（管理者・スタッフ・POSシステム）';
 ```
 
-### 3.2 stores（店舗）
+### 3.2 personal_access_tokens（Sanctum APIトークン）
+```sql
+CREATE TABLE personal_access_tokens (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    tokenable_type VARCHAR(255) NOT NULL COMMENT 'モデル型（App\\Models\\User）',
+    tokenable_id BIGINT UNSIGNED NOT NULL COMMENT 'ユーザーID',
+    name VARCHAR(255) NOT NULL COMMENT 'トークン名',
+    token VARCHAR(64) NOT NULL UNIQUE COMMENT 'ハッシュ化されたトークン',
+    abilities TEXT NULL COMMENT '権限スコープ（JSON配列）',
+    last_used_at TIMESTAMP NULL COMMENT '最終使用日時',
+    expires_at TIMESTAMP NULL COMMENT '有効期限',
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL,
+    
+    PRIMARY KEY (id),
+    UNIQUE KEY personal_access_tokens_token_unique (token),
+    INDEX personal_access_tokens_tokenable (tokenable_type, tokenable_id)
+) ENGINE=InnoDB COMMENT='Sanctum API認証トークン（POS用）';
+```
+
+### 3.3 password_reset_tokens（パスワードリセット）
+```sql
+CREATE TABLE password_reset_tokens (
+    email VARCHAR(255) NOT NULL COMMENT 'リセット対象のメールアドレス',
+    token VARCHAR(255) NOT NULL COMMENT 'リセットトークン',
+    created_at TIMESTAMP NULL COMMENT '作成日時',
+    
+    PRIMARY KEY (email),
+    INDEX password_reset_tokens_email (email)
+) ENGINE=InnoDB COMMENT='パスワードリセットトークン（Laravel標準）';
+```
+
+### 3.4 stores（店舗）
 ```sql
 CREATE TABLE stores (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -170,11 +211,11 @@ CREATE TABLE stores (
 ) ENGINE=InnoDB COMMENT='店舗';
 ```
 
-### 3.3 sessions（セッション管理）
+### 3.3 sessions（席セッション管理）
 ```sql
 CREATE TABLE sessions (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    session_id VARCHAR(100) NOT NULL UNIQUE COMMENT 'セッションID (SESSION_POS_xxx形式、POS端末のみ生成)',
+    session_id VARCHAR(150) NOT NULL UNIQUE COMMENT 'セッションID (暗号化セキュリティ強化版、POS端末のみ生成)',
     store_id BIGINT UNSIGNED NOT NULL COMMENT '店舗ID',
     table_number VARCHAR(50) NOT NULL COMMENT 'テーブル番号',
     customer_count INT UNSIGNED NULL COMMENT '利用人数（未設定時はNULL）',
@@ -194,7 +235,7 @@ CREATE TABLE sessions (
 ) ENGINE=InnoDB COMMENT='セッション管理（全てPOS端末で生成）';
 ```
 
-### 3.4 products（商品マスター）
+### 3.5 products（商品マスター）
 ```sql
 CREATE TABLE products (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -226,7 +267,7 @@ CREATE TABLE products (
 ) ENGINE=InnoDB COMMENT='商品マスター';
 ```
 
-### 3.5 categories（商品カテゴリマスター）
+### 3.6 categories（商品カテゴリマスター）
 ```sql
 CREATE TABLE categories (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -245,7 +286,7 @@ CREATE TABLE categories (
 ) ENGINE=InnoDB COMMENT='商品カテゴリマスター';
 ```
 
-### 3.6 category_product（商品カテゴリ紐付け）
+### 3.7 category_product（商品カテゴリ紐付け）
 ```sql
 CREATE TABLE category_product (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -263,7 +304,7 @@ CREATE TABLE category_product (
 ) ENGINE=InnoDB COMMENT='商品カテゴリ紐付け';
 ```
 
-### 3.7 options（商品オプションマスター）
+### 3.8 options（商品オプションマスター）
 ```sql
 CREATE TABLE options (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -280,7 +321,7 @@ CREATE TABLE options (
 ) ENGINE=InnoDB COMMENT='商品オプションマスター';
 ```
 
-### 3.8 product_to_options（商品とオプションの紐付け）
+### 3.9 product_to_options（商品とオプションの紐付け）
 ```sql
 CREATE TABLE product_to_options (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -297,7 +338,7 @@ CREATE TABLE product_to_options (
 ) ENGINE=InnoDB COMMENT='商品とオプションの紐付け';
 ```
 
-### 3.9 option_detail（商品オプション詳細）
+### 3.10 option_detail（商品オプション詳細）
 ```sql
 CREATE TABLE option_detail (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -315,7 +356,7 @@ CREATE TABLE option_detail (
 ) ENGINE=InnoDB COMMENT='商品オプション詳細';
 ```
 
-### 3.10 images（商品画像マスター）
+### 3.11 images（商品画像マスター）
 ```sql
 CREATE TABLE images (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -333,7 +374,7 @@ CREATE TABLE images (
 ) ENGINE=InnoDB COMMENT='商品画像マスター';
 ```
 
-### 3.11 tax_rates（税率マスター）
+### 3.12 tax_rates（税率マスター）
 ```sql
 CREATE TABLE tax_rates (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -346,7 +387,7 @@ CREATE TABLE tax_rates (
 ) ENGINE=InnoDB COMMENT='税率マスター';
 ```
 
-### 3.12 orders（注文）
+### 3.13 orders（注文）
 
 #### 2層認証による注文管理
 本システムでは注文管理において2層の認証・識別を行います：
@@ -355,10 +396,11 @@ CREATE TABLE tax_rates (
 
 #### ハンディ端末の擬似トークン対応
 ハンディ端末からの注文では、個人識別は不要ですがDB整合性のため擬似トークンを使用：
-- **擬似ゲストトークン**: `handy_proxy_table{N}_{increment}` 形式
+- **擬似ゲストトークン**: `handy_guest_token` 固定値
 - **擬似フィンガープリント**: `handy_device_fingerprint` 固定値
 - **用途**: DB NOT NULL制約対応のみ（認証機能なし）
 - **API認証**: POS認証トークンを使用（擬似トークンは無関係）
+- **店舗・席識別**: orders.store_id、orders.session_idで十分
 
 ```sql
 CREATE TABLE orders (
@@ -390,7 +432,7 @@ CREATE TABLE orders (
 ) ENGINE=InnoDB COMMENT='注文（2層認証による管理）';
 ```
 
-### 3.13 order_items（注文明細）
+### 3.14 order_items（注文明細）
 ```sql
 CREATE TABLE order_items (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -410,7 +452,7 @@ CREATE TABLE order_items (
 ) ENGINE=InnoDB COMMENT='注文明細';
 ```
 
-### 3.14 order_item_options（注文商品オプション）
+### 3.15 order_item_options（注文商品オプション）
 
 #### スナップショットの活用目的
 1. **価格変更耐性**: 注文後にマスター価格が変更されても注文時の価格を保持
@@ -441,59 +483,71 @@ CREATE TABLE order_item_options (
 ) ENGINE=InnoDB COMMENT='注文商品オプション';
 ```
 
-### 3.15 carts（カート状態管理）
-```sql
-CREATE TABLE carts (
-    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    guest_token VARCHAR(255) NOT NULL COMMENT 'ゲストトークン',
-    session_id BIGINT UNSIGNED NOT NULL COMMENT 'セッションID', 
-    product_id BIGINT UNSIGNED NOT NULL COMMENT '商品ID',
-    quantity INT UNSIGNED NOT NULL COMMENT '数量',
-    unit_price INT NOT NULL COMMENT '単価（円）',
-    options JSON NULL COMMENT '選択オプション',
-    options_hash VARCHAR(32) GENERATED ALWAYS AS (MD5(IFNULL(options, ''))) STORED COMMENT 'オプション識別用ハッシュ',
-    expires_at TIMESTAMP NOT NULL COMMENT '有効期限（TTL管理）',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    
-    PRIMARY KEY (id),
-    UNIQUE KEY uk_carts_item (guest_token, product_id, options_hash),
-    INDEX idx_carts_token (guest_token),
-    INDEX idx_carts_expires (expires_at),
-    INDEX idx_carts_session (session_id),
-    
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT,
-    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-) ENGINE=InnoDB COMMENT='カート状態管理（Redis代替）';
+### 3.16 カート管理（Redis実装）
+```redis
+# カートデータ構造（Redis Key-Value）
+Key: cart:{guest_session_id}
+Value: {
+  "items": [
+    {
+      "product_id": 10,
+      "quantity": 2,
+      "unit_price": 800,
+      "options": {...},
+      "options_hash": "abc123"
+    }
+  ],
+  "total": 1600,
+  "updated_at": 1692123456
+}
+TTL: 1800秒（30分）
+
+# 設定方法
+Redis::setex("cart:{$guestSessionId}", 1800, json_encode($cartData));
+Redis::get("cart:{$guestSessionId}");
 ```
 
-### 3.16 guest_sessions（ゲストセッション管理）
+### 3.17 guest_sessions（ゲストセッション管理・Breeze認証用）
 ```sql
 CREATE TABLE guest_sessions (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    token VARCHAR(255) UNIQUE NOT NULL COMMENT 'ゲストトークン',
-    session_id BIGINT UNSIGNED NOT NULL COMMENT 'DB sessionsテーブルID',
+    session_id BIGINT UNSIGNED NOT NULL COMMENT '席セッションID',
     device_fingerprint VARCHAR(255) NOT NULL COMMENT 'デバイス識別',
     store_id BIGINT UNSIGNED NOT NULL COMMENT '店舗ID',
+    
+    -- Laravel Breeze Authenticatable必須カラム
+    email VARCHAR(255) NOT NULL COMMENT 'ゲスト識別用仮想メールアドレス（device_fingerprint@guest.local）',
+    email_verified_at TIMESTAMP NULL COMMENT 'メール認証日時（ゲストは常にNULL）',
+    password VARCHAR(255) NULL COMMENT 'パスワード（ゲストは使用しないためNULL）',
+    remember_token VARCHAR(100) NULL COMMENT 'Remember Meトークン（ゲストは使用しない）',
+    
+    -- ゲスト専用カラム
+    guest_token VARCHAR(64) NOT NULL UNIQUE COMMENT 'ゲスト識別トークン（認証後発行）',
     language CHAR(2) DEFAULT 'ja' COMMENT '言語設定',
     agreed_policy BOOLEAN DEFAULT FALSE COMMENT 'ポリシー同意状態',
-    expires_at TIMESTAMP NOT NULL COMMENT '有効期限（30分TTL）',
-    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '最終アクセス時刻',
+    expires_at TIMESTAMP NOT NULL COMMENT 'セッション有効期限（30分TTL）',
+    last_activity TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '最終アクティビティ時刻',
+    
+    -- 視覚的識別情報
+    identifier_icon VARCHAR(10) NOT NULL DEFAULT '🐶' COMMENT '識別アイコン（絵文字）',
+    identifier_color VARCHAR(7) NOT NULL DEFAULT '#FF6B6B' COMMENT '識別カラー（HEXコード）',
+    
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
     PRIMARY KEY (id),
-    UNIQUE KEY uk_guest_sessions_token (token),
+    UNIQUE KEY uk_guest_device (session_id, device_fingerprint),
+    UNIQUE KEY uk_guest_email (email),
+    UNIQUE KEY uk_guest_token (guest_token),
     INDEX idx_guest_sessions_expires (expires_at),
     INDEX idx_guest_sessions_device (device_fingerprint),
-    INDEX idx_guest_sessions_session (session_id),
     
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
     FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE RESTRICT
-) ENGINE=InnoDB COMMENT='ゲストセッション管理（Redis代替）';
+) ENGINE=InnoDB COMMENT='ゲスト認証情報（Laravel Breezeカスタム認証用）';
 ```
 
-### 3.17 cart_logs（カート操作ログ）
+### 3.18 cart_logs（カート操作ログ）
 ```sql
 CREATE TABLE cart_logs (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -525,7 +579,7 @@ CREATE TABLE cart_logs (
 ) ENGINE=InnoDB COMMENT='カート操作ログ（監査・調査用）';
 ```
 
-### 3.18 change_logs（変更履歴）
+### 3.19 change_logs（変更履歴）
 ```sql
 CREATE TABLE change_logs (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -551,7 +605,7 @@ CREATE TABLE change_logs (
 ) ENGINE=InnoDB COMMENT='Webサーバー主導の変更履歴（POS同期用）';
 ```
 
-### 3.19 system_settings（システム設定）
+### 3.20 system_settings（システム設定）
 ```sql
 CREATE TABLE system_settings (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -589,45 +643,21 @@ CREATE TABLE pos_health_checks (
 ) ENGINE=InnoDB COMMENT='POSヘルスチェック管理';
 ```
 
-### 3.20 store_admin_urls（店舗管理画面URL履歴）
+### 3.21 failed_jobs（失敗ジョブ管理）
 ```sql
-CREATE TABLE store_admin_urls (
+CREATE TABLE failed_jobs (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    store_id BIGINT UNSIGNED NOT NULL COMMENT '店舗ID',
-    url_prefix VARCHAR(100) NOT NULL COMMENT '管理画面URLプレフィックス',
-    is_active BOOLEAN NOT NULL DEFAULT TRUE COMMENT 'アクティブフラグ',
-    activated_at TIMESTAMP NOT NULL COMMENT '有効化日時',
-    deactivated_at TIMESTAMP NULL COMMENT '無効化日時',
-    created_by BIGINT UNSIGNED NULL COMMENT '作成者ID',
-    change_reason VARCHAR(255) NULL COMMENT '変更理由',
-    created_at TIMESTAMP NULL,
-    updated_at TIMESTAMP NULL,
+    uuid VARCHAR(255) NOT NULL UNIQUE COMMENT 'ジョブ一意識別子',
+    connection TEXT NOT NULL COMMENT 'キュー接続名',
+    queue TEXT NOT NULL COMMENT 'キュー名',
+    payload LONGTEXT NOT NULL COMMENT 'ジョブペイロード（JSON）',
+    exception LONGTEXT NOT NULL COMMENT '例外情報（スタックトレース）',
+    failed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '失敗日時',
+    
     PRIMARY KEY (id),
-    UNIQUE KEY uk_store_admin_urls_prefix (url_prefix),
-    INDEX idx_store_admin_urls_store_active (store_id, is_active),
-    INDEX idx_store_admin_urls_activated (activated_at),
-    FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE,
-    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
-) ENGINE=InnoDB COMMENT='店舗管理画面URL履歴（パスベース方式）';
-```
-
-### 3.21 guest_identifiers（ゲスト識別情報）
-```sql
-CREATE TABLE guest_identifiers (
-    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    guest_token VARCHAR(255) NOT NULL UNIQUE COMMENT 'ゲストトークン',
-    session_id BIGINT UNSIGNED NOT NULL COMMENT 'セッションID',
-    identifier_icon VARCHAR(10) NOT NULL COMMENT '識別アイコン（絵文字）',
-    identifier_color VARCHAR(7) NOT NULL COMMENT '識別カラー（HEXコード）',
-    assigned_at TIMESTAMP NOT NULL COMMENT 'アサイン日時',
-    created_at TIMESTAMP NULL,
-    updated_at TIMESTAMP NULL,
-    PRIMARY KEY (id),
-    UNIQUE KEY uk_guest_identifiers_token (guest_token),
-    INDEX idx_guest_identifiers_session (session_id),
-    INDEX idx_guest_identifiers_assigned (assigned_at),
-    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-) ENGINE=InnoDB COMMENT='ゲスト識別情報（動物アイコン・カラー管理）';
+    UNIQUE KEY uk_failed_jobs_uuid (uuid),
+    INDEX idx_failed_jobs_failed_at (failed_at)
+) ENGINE=InnoDB COMMENT='失敗したキュージョブ（Laravel標準）';
 ```
 
 ## 4. インデックス戦略と障害復旧
@@ -682,7 +712,7 @@ ALTER TABLE change_logs PARTITION BY RANGE (YEAR(created_at)*100 + MONTH(created
 
 ### 5.2 アーカイブ戦略（日次締め運用前提）
 - **change_logs**: 1ヶ月経過後にアーカイブテーブルに移動（POSに完全データあり）
-- **carts**: 期限切れ後に自動削除（リアルタイム管理）
+- **cart_data（Redis）**: 30分TTLで自動削除（リアルタイム管理）
 - **guest_sessions**: 期限切れ後に自動削除（30分TTL）
 - **cart_logs**: 1ヶ月経過後にアーカイブテーブルに移動（分析完了後）
 - **images**: 商品削除時に連動して整理
@@ -856,4 +886,4 @@ CREATE INDEX idx_carts_token_active ON carts(guest_token) WHERE expires_at > NOW
 
 ---
 
-**注意**: このデータベース設計はDB中心のシンプルな構成で、Redis障害リスクを完全に排除しています。POSシステムが全マスターデータを保持する前提で、ゲストセッションとカート管理もDBで統一しています。
+**注意**: このデータベース設計はDB中心の構成ですが、パフォーマンス向上のため限定的にRedisを使用します（セッション、カート、メニューキャッシュのみ）。POSシステムが全マスターデータを保持し、ゲストセッションはDBで管理し、カートデータはRedisで高速管理します。
