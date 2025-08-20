@@ -71,7 +71,9 @@
       "Bash(git merge:*)",
       "Bash(git checkout:*)",
       "Bash(./vendor/bin/sail artisan make:migration:*)",
-      "Bash(./vendor/bin/sail artisan migrate:status)"
+      "Bash(./vendor/bin/sail artisan migrate:status)",
+      "Bash(./vendor/bin/sail artisan breeze:install:*)",
+      "Bash(./vendor/bin/sail artisan make:livewire Auth/Login)"
     ],
     "deny": [
       "Bash(sudo:*)",
