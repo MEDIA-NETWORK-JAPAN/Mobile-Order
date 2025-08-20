@@ -49,13 +49,13 @@ class User extends Authenticatable
         'last_login_at' => 'datetime',
     ];
 
-    // Relationships
+    // リレーション
     public function store()
     {
         return $this->belongsTo(Store::class);
     }
 
-    // Scopes
+    // スコープ
     public function scopeActive($query)
     {
         return $query->where('is_active', true);
@@ -71,7 +71,7 @@ class User extends Authenticatable
         return $query->where('store_id', $storeId);
     }
 
-    // Helper methods
+    // ヘルパーメソッド
     public function isSuperAdmin()
     {
         return $this->role === 'super_admin';

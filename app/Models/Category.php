@@ -23,7 +23,7 @@ class Category extends Model
         'is_active' => 'boolean',
     ];
 
-    // Relationships
+    // リレーション
     public function store()
     {
         return $this->belongsTo(Store::class);
@@ -37,7 +37,7 @@ class Category extends Model
                     ->orderBy('pivot_sort_order');
     }
 
-    // Scopes
+    // スコープ
     public function scopeActive($query)
     {
         return $query->where('is_active', true);
@@ -53,7 +53,7 @@ class Category extends Model
         return $query->orderBy('sort_order');
     }
 
-    // Accessors
+    // アクセサ
     public function getTranslatedNameAttribute($language = 'ja')
     {
         if ($this->translations && isset($this->translations[$language])) {

@@ -22,7 +22,7 @@ class Option extends Model
         'translations' => 'array',
     ];
 
-    // Relationships
+    // リレーション
     public function store()
     {
         return $this->belongsTo(Store::class);
@@ -41,7 +41,7 @@ class Option extends Model
         return $this->hasMany(OptionDetail::class)->orderBy('sort_order');
     }
 
-    // Scopes
+    // スコープ
     public function scopeByStore($query, $storeId)
     {
         return $query->where('store_id', $storeId);
@@ -62,7 +62,7 @@ class Option extends Model
         return $query->where('selection_type', 'multiple');
     }
 
-    // Accessors
+    // アクセサ
     public function getTranslatedTitleAttribute($language = 'ja')
     {
         if ($this->translations && isset($this->translations[$language])) {

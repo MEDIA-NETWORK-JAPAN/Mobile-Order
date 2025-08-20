@@ -20,7 +20,7 @@ class Image extends Model
         'sort_order' => 'integer',
     ];
 
-    // Relationships
+    // リレーション
     public function store()
     {
         return $this->belongsTo(Store::class);
@@ -31,13 +31,13 @@ class Image extends Model
         return $this->belongsTo(Product::class);
     }
 
-    // Scopes
+    // スコープ
     public function scopeOrdered($query)
     {
         return $query->orderBy('sort_order');
     }
 
-    // Accessors
+    // アクセサ
     public function getUrlAttribute()
     {
         return asset('storage/images/' . $this->filename);

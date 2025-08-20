@@ -29,7 +29,7 @@ class Store extends Model
         'is_active' => 'boolean',
     ];
 
-    // Relationships
+    // リレーション
     public function users()
     {
         return $this->hasMany(User::class);
@@ -70,7 +70,7 @@ class Store extends Model
         return $this->hasOne(PosHealthCheck::class);
     }
 
-    // Scopes
+    // スコープ
     public function scopeActive($query)
     {
         return $query->where('is_active', true);

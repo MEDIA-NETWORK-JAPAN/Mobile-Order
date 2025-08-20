@@ -38,7 +38,7 @@ class Product extends Model
         'expected_available_time' => 'datetime:H:i',
     ];
 
-    // Relationships
+    // リレーション
     public function store()
     {
         return $this->belongsTo(Store::class);
@@ -80,7 +80,7 @@ class Product extends Model
         return $this->hasMany(CartLog::class);
     }
 
-    // Scopes
+    // スコープ
     public function scopeActive($query)
     {
         return $query->where('is_active', true);
@@ -101,7 +101,7 @@ class Product extends Model
         return $query->where('code', $code);
     }
 
-    // Accessors
+    // アクセサ
     public function getTranslatedNameAttribute($language = 'ja')
     {
         if ($this->translations && isset($this->translations[$language]['name'])) {

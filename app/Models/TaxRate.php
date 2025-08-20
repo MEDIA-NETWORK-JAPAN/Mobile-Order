@@ -18,13 +18,13 @@ class TaxRate extends Model
         'rate' => 'decimal:2',
     ];
 
-    // Scopes
+    // スコープ
     public function scopeByType($query, $taxType)
     {
         return $query->where('tax_type', $taxType);
     }
 
-    // Helper methods
+    // ヘルパーメソッド
     public static function getRate($taxType)
     {
         $taxRate = static::where('tax_type', $taxType)->first();

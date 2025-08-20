@@ -23,7 +23,7 @@ class OptionDetail extends Model
         'sort_order' => 'integer',
     ];
 
-    // Relationships
+    // リレーション
     public function option()
     {
         return $this->belongsTo(Option::class);
@@ -34,7 +34,7 @@ class OptionDetail extends Model
         return $this->belongsTo(Product::class);
     }
 
-    // Scopes
+    // スコープ
     public function scopeDefault($query)
     {
         return $query->where('default_selected', true);
