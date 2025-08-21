@@ -37,6 +37,12 @@ class CategoryCreate extends Component
 
         $user = auth()->user();
         
+        // SuperAdmin権限チェック（緊急編集機能）
+        if (!$user->isSuperAdmin()) {
+            $this->error('カテゴリの編集権限がありません。カテゴリマスターデータはPOS側で管理されています。緊急編集にはSuperAdmin権限が必要です。');
+            return;
+        }
+        
         // 権限チェック
         if (!$user->hasStoreAccess($this->store_id)) {
             $this->error('この店舗にカテゴリを追加する権限がありません。');
@@ -62,6 +68,7 @@ class CategoryCreate extends Component
 
         return view('livewire.admin.categories.category-create', [
             'stores' => $stores,
+            'canEdit' => $user->isSuperAdmin(), // 編集権限フラグ
         ]);
     }
 }

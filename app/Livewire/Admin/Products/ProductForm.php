@@ -122,6 +122,12 @@ class ProductForm extends Component
 
         $user = auth()->user();
         
+        // SuperAdmin権限チェック（緊急編集機能）
+        if (!$user->isSuperAdmin()) {
+            $this->error('商品の編集権限がありません。商品マスターデータはPOS側で管理されています。緊急編集にはSuperAdmin権限が必要です。');
+            return;
+        }
+        
         // 新規作成時の権限チェック
         if (!$this->isEditing && !$user->hasStoreAccess($this->store_id)) {
             $this->error('この店舗に商品を追加する権限がありません。');
@@ -185,6 +191,7 @@ class ProductForm extends Component
         return view('livewire.admin.products.product-form', [
             'stores' => $stores,
             'categories' => $categories,
+            'canEdit' => $user->isSuperAdmin(), // 編集権限フラグ
         ]);
     }
 }

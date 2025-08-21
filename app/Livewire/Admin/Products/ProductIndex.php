@@ -115,6 +115,7 @@ class ProductIndex extends Component
             'products' => $products,
             'stores' => $stores,
             'categories' => $categories,
+            'canEdit' => $user->isSuperAdmin(), // 編集権限フラグ
         ]);
     }
 }

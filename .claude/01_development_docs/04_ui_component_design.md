@@ -35,6 +35,12 @@
   - [11.3 Mary UIを使った実装](#113-mary-uiを使った実装)
   - [11.4 タッチデバイス対応](#114-タッチデバイス対応)
   - [11.5 UX改善ポイント](#115-ux改善ポイント)
+- [12. 無限スクロール機能](#12-無限スクロール機能)
+  - [12.1 概要と目的](#121-概要と目的)
+  - [12.2 実装対象画面](#122-実装対象画面)
+  - [12.3 技術実装方法](#123-技術実装方法)
+  - [12.4 パフォーマンス最適化](#124-パフォーマンス最適化)
+  - [12.5 UX設計ポイント](#125-ux設計ポイント)
 
 ---
 
@@ -1014,6 +1020,224 @@ initSortable() {
 3. **パフォーマンス**
    - Debounce処理で連続操作を最適化
    - wire:ignore.selfで再レンダリング防止
+
+## 12. 無限スクロール機能
+
+### 12.1 概要と目的
+モバイルファーストのシステムとして、ユーザーがスクロールするだけで自動的に追加コンテンツを読み込む無限スクロール機能を実装。ページネーションのクリック操作を不要にし、シームレスな閲覧体験を提供。
+
+### 12.2 実装対象画面
+
+#### お客様向け画面（モバイルファースト）
+- **メニュー表示画面** (`/menu`) - **唯一の実装対象**
+  - スマートフォンでの操作性を最優先
+  - スクロールによる自然な閲覧体験
+  - ページネーションクリックの排除
+
+#### 管理画面（実装対象外）
+- **従来のページネーション維持**
+  - PC操作が前提のため、ページネーション方式を採用
+  - 管理者は一覧性重視のテーブル表示
+  - `/admin/products`、`/admin/categories` 等は標準ページネーション
+
+### 12.3 技術実装方法
+
+#### Livewireコンポーネント実装
+```php
+// app/Livewire/Customer/MenuDisplay.php
+class MenuDisplay extends Component
+{
+    public int $perPage = 10;
+    public bool $hasMorePages = true;
+    public array $loadedIds = [];
+    
+    public function loadMore()
+    {
+        // 連続呼び出し防止（デバウンス）
+        if (!$this->hasMorePages) {
+            return;
+        }
+        
+        $this->perPage += 10;
+    }
+    
+    public function render()
+    {
+        // セッションから店舗IDを取得
+        $storeId = session('store_id');
+        
+        $products = Product::with(['store', 'categories', 'images'])
+            ->where('store_id', $storeId)
+            ->where('is_active', true)
+            ->where('availability_status', 'available')
+            ->when($this->selectedCategory, fn($q) => 
+                $q->whereHas('categories', fn($cat) => 
+                    $cat->where('categories.id', $this->selectedCategory)
+                )
+            )
+            ->orderBy('sort_order')
+            ->limit($this->perPage)
+            ->get();
+        
+        // 全件取得済みか判定
+        $totalCount = Product::where('store_id', $storeId)
+            ->where('is_active', true)
+            ->where('availability_status', 'available')
+            ->count();
+        
+        $this->hasMorePages = $products->count() < $totalCount;
+        $this->loadedIds = $products->pluck('id')->toArray();
+        
+        return view('livewire.customer.menu-display', [
+            'products' => $products
+        ]);
+    }
+}
+```
+
+#### ビュー実装（IntersectionObserver API使用）
+```blade
+{{-- resources/views/livewire/customer/menu-display.blade.php --}}
+<div x-data="{
+    observe() {
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting && @js($hasMorePages)) {
+                    @this.loadMore();
+                }
+            });
+        }, {
+            root: null,
+            rootMargin: '100px',
+            threshold: 0.1
+        });
+        
+        if (this.$refs.loadTrigger) {
+            observer.observe(this.$refs.loadTrigger);
+        }
+    }
+}" x-init="observe()">
+    
+    {{-- 商品グリッド表示 --}}
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        @foreach($products as $product)
+            <x-product-card :product="$product" wire:key="product-{{ $product->id }}" />
+        @endforeach
+    </div>
+    
+    {{-- 読み込みトリガー要素 --}}
+    @if($hasMorePages)
+        <div x-ref="loadTrigger" class="py-8">
+            <div wire:loading wire:target="loadMore" class="flex justify-center">
+                <x-mary-loading class="loading-spinner loading-lg" />
+                <span class="ml-2 text-gray-600">読み込み中...</span>
+            </div>
+        </div>
+    @else
+        <div class="text-center py-8 text-gray-500">
+            すべての商品を表示しました
+        </div>
+    @endif
+</div>
+```
+
+### 12.4 パフォーマンス最適化
+
+#### 1. クエリ最適化
+```php
+// Eager Loadingで N+1 問題を回避
+$products = Product::with(['store', 'categories', 'images'])
+    ->select('id', 'name', 'price', 'tax_in_price', 'availability_status', 'store_id')
+    ->limit($this->perPage)
+    ->get();
+```
+
+#### 2. デバウンス処理
+```javascript
+// 連続スクロール時の過剰なリクエストを防止
+let isLoading = false;
+const loadMore = debounce(() => {
+    if (!isLoading && @js($hasMorePages)) {
+        isLoading = true;
+        @this.loadMore().then(() => {
+            isLoading = false;
+        });
+    }
+}, 300);
+```
+
+#### 3. 画像遅延読み込み
+```blade
+{{-- loading="lazy" で画像の遅延読み込み --}}
+<img src="{{ $product->image_url }}" 
+     alt="{{ $product->name }}"
+     loading="lazy"
+     class="w-full h-48 object-cover">
+```
+
+#### 4. キャッシュ戦略
+```php
+// 頻繁にアクセスされるデータはキャッシュ
+$categories = Cache::remember('categories_' . $storeId, 3600, function() use ($storeId) {
+    return Category::where('store_id', $storeId)->active()->get();
+});
+```
+
+### 12.5 UX設計ポイント
+
+#### 1. ローディング表示
+- **スケルトンスクリーン**: 初回読み込み時
+- **スピナー**: 追加読み込み時
+- **プログレスバー**: 全体の読み込み進捗表示
+
+#### 2. エラーハンドリング
+```blade
+{{-- ネットワークエラー時の再試行ボタン --}}
+<div wire:offline class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+    <p>ネットワーク接続がありません</p>
+    <button wire:click="loadMore" class="mt-2 btn btn-sm">
+        再試行
+    </button>
+</div>
+```
+
+#### 3. スクロール位置の保持
+```javascript
+// ブラウザバック時にスクロール位置を復元
+window.addEventListener('beforeunload', () => {
+    sessionStorage.setItem('scrollPosition', window.scrollY);
+});
+
+window.addEventListener('load', () => {
+    const scrollPos = sessionStorage.getItem('scrollPosition');
+    if (scrollPos) {
+        window.scrollTo(0, parseInt(scrollPos));
+    }
+});
+```
+
+#### 4. モバイル最適化
+- **タッチジェスチャー対応**: プルトゥリフレッシュ
+- **仮想スクロール**: 大量データ時のメモリ最適化
+- **適応的読み込み数**: ネットワーク速度に応じた調整
+
+#### 5. アクセシビリティ
+```blade
+{{-- スクリーンリーダー対応 --}}
+<div role="status" aria-live="polite" aria-atomic="true">
+    <span class="sr-only">
+        {{ $products->count() }}件中{{ count($loadedIds) }}件を表示中
+    </span>
+</div>
+```
+
+#### 6. フォールバック
+```blade
+{{-- 無限スクロール非対応時は通常のページネーション表示 --}}
+<noscript>
+    {{ $products->links() }}
+</noscript>
+```
 
 ---
 

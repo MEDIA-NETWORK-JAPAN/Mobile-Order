@@ -61,6 +61,13 @@ class CategoryIndex extends Component
 
         // 権限チェック
         $user = auth()->user();
+        
+        // SuperAdmin権限チェック（緊急編集機能）
+        if (!$user->isSuperAdmin()) {
+            $this->error('カテゴリの編集権限がありません。カテゴリマスターデータはPOS側で管理されています。');
+            return;
+        }
+        
         if (!$user->hasStoreAccess($category->store_id)) {
             $this->error('このカテゴリを編集する権限がありません。');
             return;
@@ -112,6 +119,13 @@ class CategoryIndex extends Component
 
         // 権限チェック
         $user = auth()->user();
+        
+        // SuperAdmin権限チェック（緊急編集機能）
+        if (!$user->isSuperAdmin()) {
+            $this->error('カテゴリの編集権限がありません。カテゴリマスターデータはPOS側で管理されています。');
+            return;
+        }
+        
         if (!$user->hasStoreAccess($category->store_id)) {
             $this->error('このカテゴリを変更する権限がありません。');
             return;
@@ -134,6 +148,13 @@ class CategoryIndex extends Component
 
         // 権限チェック
         $user = auth()->user();
+        
+        // SuperAdmin権限チェック（緊急編集機能）
+        if (!$user->isSuperAdmin()) {
+            $this->error('カテゴリの削除権限がありません。カテゴリマスターデータはPOS側で管理されています。');
+            return;
+        }
+        
         if (!$user->hasStoreAccess($category->store_id)) {
             $this->error('このカテゴリを削除する権限がありません。');
             return;
@@ -175,6 +196,7 @@ class CategoryIndex extends Component
         return view('livewire.admin.categories.category-index', [
             'categories' => $categories,
             'stores' => $stores,
+            'canEdit' => $user->isSuperAdmin(), // 編集権限フラグ
         ]);
     }
 }

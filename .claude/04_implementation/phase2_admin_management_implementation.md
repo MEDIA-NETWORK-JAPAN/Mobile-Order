@@ -31,8 +31,18 @@ Phase 2-1: 管理機能基盤
 ├── Livewire管理画面コンポーネント (4コンポーネント)
 ├── 管理画面コントローラー (DashboardController)
 ├── 認証・権限管理システム
+├── SuperAdmin緊急編集機能 ⭐ 追加実装
 └── ルーティング設定
 ```
+
+### 1.4 SuperAdmin緊急編集機能
+POS中心設計との整合性を保ちながら、緊急時（POS障害等）にのみSuperAdminがクラウド側からマスターデータを編集できる機能を実装。
+
+#### 特徴
+- **権限ベース制御**: SuperAdminのみ編集可能
+- **緊急時運用**: 通常はPOS側で管理、緊急時のみクラウド編集
+- **手動同期**: POS側への反映は手動操作
+- **UI警告表示**: 緊急編集モード時の明確な警告
 
 ---
 
@@ -271,10 +281,30 @@ Route::post('login', function (Request $request) {
 
 #### 権限レベル定義
 ```
-super_admin: 全店舗・全機能アクセス可能
-admin:       所属店舗の管理機能アクセス可能  
+super_admin: 全店舗・全機能アクセス可能 + 緊急編集権限
+admin:       所属店舗の管理機能アクセス可能（閲覧のみ）
 staff:       所属店舗の基本機能のみ
 pos_system:  API アクセス用（POS端末）
+```
+
+#### SuperAdmin緊急編集権限
+```php
+// User.php - 権限チェックメソッド
+public function isSuperAdmin()
+{
+    return $this->role === 'super_admin';
+}
+
+// Livewire コンポーネント内 - 緊急編集チェック
+public function save()
+{
+    // SuperAdmin権限チェック（緊急編集機能）
+    if (!auth()->user()->isSuperAdmin()) {
+        $this->error('商品の編集権限がありません。商品マスターデータはPOS側で管理されています。緊急編集にはSuperAdmin権限が必要です。');
+        return;
+    }
+    // 保存処理...
+}
 ```
 
 #### 権限チェック実装例
@@ -284,6 +314,12 @@ public function deleteProduct($productId)
 {
     $product = Product::find($productId);
     $user = auth()->user();
+    
+    // SuperAdmin権限チェック
+    if (!$user->isSuperAdmin()) {
+        $this->error('商品の削除権限がありません。商品マスターデータはPOS側で管理されています。');
+        return;
+    }
     
     if (!$user->hasStoreAccess($product->store_id)) {
         $this->error('この商品を削除する権限がありません。');
