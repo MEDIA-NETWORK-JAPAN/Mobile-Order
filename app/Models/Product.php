@@ -65,20 +65,22 @@ class Product extends Model
         return $this->hasMany(OptionDetail::class);
     }
 
-    public function images()
-    {
-        return $this->hasMany(Image::class)->orderBy('sort_order');
-    }
+    // TODO: Phase 2後半で実装 - 画像管理
+    // public function images()
+    // {
+    //     return $this->hasMany(Image::class)->orderBy('sort_order');
+    // }
 
-    public function orderItems()
-    {
-        return $this->hasMany(OrderItem::class);
-    }
+    // TODO: Phase 3で実装 - 注文機能
+    // public function orderItems()
+    // {
+    //     return $this->hasMany(OrderItem::class);
+    // }
 
-    public function cartLogs()
-    {
-        return $this->hasMany(CartLog::class);
-    }
+    // public function cartLogs()
+    // {
+    //     return $this->hasMany(CartLog::class);
+    // }
 
     // スコープ
     public function scopeActive($query)

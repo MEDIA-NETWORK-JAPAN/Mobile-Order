@@ -20,6 +20,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Admin Panel URL Prefix
+    |--------------------------------------------------------------------------
+    |
+    | This value determines the URL prefix for the admin panel. For security
+    | purposes, it's recommended to change this from the default 'admin' 
+    | value in production environments.
+    |
+    */
+
+    'admin_prefix' => env('ADMIN_URL_PREFIX', 'admin'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Environment
     |--------------------------------------------------------------------------
     |

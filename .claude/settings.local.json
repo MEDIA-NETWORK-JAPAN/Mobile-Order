@@ -73,7 +73,13 @@
       "Bash(./vendor/bin/sail artisan make:migration:*)",
       "Bash(./vendor/bin/sail artisan migrate:status)",
       "Bash(./vendor/bin/sail artisan breeze:install:*)",
-      "Bash(./vendor/bin/sail artisan make:livewire Auth/Login)"
+      "Bash(./vendor/bin/sail artisan make:livewire Auth/Login)",
+      "Bash(sail npm run build:*)",
+      "Bash(./vendor/bin/sail npm run:*)",
+      "Bash(./vendor/bin/sail npm install:*)",
+      "Bash(alias sail='./vendor/bin/sail')",
+      "Bash(./vendor/bin/sail artisan view:clear)",
+      "Bash(./vendor/bin/sail artisan migrate:fresh --seed)"
     ],
     "deny": [
       "Bash(sudo:*)",

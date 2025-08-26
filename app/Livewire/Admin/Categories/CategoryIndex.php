@@ -16,6 +16,9 @@ class CategoryIndex extends Component
     public $selectedStore = '';
     public $sortField = 'sort_order';
     public $sortDirection = 'asc';
+    
+    // 権限制御
+    public $canEdit = false;
 
     // Inline editing
     public $editingCategory = null;
@@ -25,6 +28,10 @@ class CategoryIndex extends Component
     public function mount()
     {
         $user = auth()->user();
+        
+        // SuperAdminのみ編集可能（POS中心設計）
+        $this->canEdit = $user->isSuperAdmin();
+        
         if (!$user->isSuperAdmin() && $user->store_id) {
             $this->selectedStore = $user->store_id;
         }

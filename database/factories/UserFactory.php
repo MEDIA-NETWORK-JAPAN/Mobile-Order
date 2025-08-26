@@ -17,9 +17,7 @@ class UserFactory extends Factory
     protected static ?string $password;
 
     /**
-     * Define the model's default state.
-     *
-     * @return array<string, mixed>
+     * モデルのデフォルト状態を定義
      */
     public function definition(): array
     {
@@ -29,16 +27,70 @@ class UserFactory extends Factory
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
+            'role' => 'staff',
+            'store_id' => \App\Models\Store::factory(),
         ];
     }
 
     /**
-     * Indicate that the model's email address should be unverified.
+     * 未認証のユーザー
      */
     public function unverified(): static
     {
         return $this->state(fn (array $attributes) => [
             'email_verified_at' => null,
+        ]);
+    }
+
+    /**
+     * SuperAdminユーザー
+     */
+    public function superAdmin(): static
+    {
+        return $this->state(fn () => [
+            'role' => 'super_admin',
+            'store_id' => null,
+        ]);
+    }
+
+    /**
+     * 管理者ユーザー
+     */
+    public function admin(): static
+    {
+        return $this->state(fn () => [
+            'role' => 'admin',
+        ]);
+    }
+
+    /**
+     * スタッフユーザー
+     */
+    public function staff(): static
+    {
+        return $this->state(fn () => [
+            'role' => 'staff',
+        ]);
+    }
+
+    /**
+     * 特定店舗のユーザー
+     */
+    public function forStore($storeId): static
+    {
+        return $this->state(fn () => ['store_id' => $storeId]);
+    }
+
+    /**
+     * テスト用SuperAdmin
+     */
+    public function testSuperAdmin(): static
+    {
+        return $this->state(fn () => [
+            'name' => 'テストSuperAdmin',
+            'email' => 'superadmin@example.com',
+            'role' => 'super_admin',
+            'store_id' => null,
         ]);
     }
 }

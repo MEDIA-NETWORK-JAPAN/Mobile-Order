@@ -19,10 +19,17 @@ class ProductIndex extends Component
     public $availabilityFilter = '';
     public $sortField = 'name';
     public $sortDirection = 'asc';
+    
+    // 権限制御
+    public $canEdit = false;
 
     public function mount()
     {
         $user = auth()->user();
+        
+        // SuperAdminのみ編集可能（POS中心設計）
+        $this->canEdit = $user->isSuperAdmin();
+        
         if (!$user->isSuperAdmin() && $user->store_id) {
             $this->selectedStore = $user->store_id;
         }
