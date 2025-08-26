@@ -2,10 +2,10 @@
 
 namespace Tests\Feature\Admin;
 
-use App\Models\User;
-use App\Models\Store;
-use App\Models\Product;
 use App\Models\Category;
+use App\Models\Product;
+use App\Models\Store;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -15,8 +15,11 @@ class ProductManagementTest extends TestCase
     use RefreshDatabase;
 
     private User $superAdmin;
+
     private User $admin;
+
     private Store $store;
+
     private Category $category;
 
     protected function setUp(): void
@@ -154,7 +157,7 @@ class ProductManagementTest extends TestCase
     {
         // 自店舗の商品
         $ownProduct = Product::factory()->forStore($this->store->id)->create(['name' => '自店舗商品']);
-        
+
         // 他店舗の商品
         $otherStore = Store::factory()->create();
         $otherProduct = Product::factory()->forStore($otherStore->id)->create(['name' => '他店舗商品']);
@@ -169,7 +172,7 @@ class ProductManagementTest extends TestCase
     {
         // 複数店舗の商品
         $store1Product = Product::factory()->forStore($this->store->id)->create(['name' => '店舗1商品']);
-        
+
         $store2 = Store::factory()->create();
         $store2Product = Product::factory()->forStore($store2->id)->create(['name' => '店舗2商品']);
 

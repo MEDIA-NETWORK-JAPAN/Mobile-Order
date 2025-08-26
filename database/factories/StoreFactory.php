@@ -16,7 +16,7 @@ class StoreFactory extends Factory
     {
         return [
             'code' => strtoupper($this->faker->unique()->lexify('ST???')),
-            'name' => $this->faker->company() . '店',
+            'name' => $this->faker->company().'店',
             'description' => $this->faker->text(200),
             'address' => $this->faker->address(),
             'phone' => $this->faker->phoneNumber(),

@@ -25,7 +25,7 @@ return new class extends Migration
             $table->timestamp('confirmed_at')->nullable()->comment('確認日時');
             $table->timestamp('completed_at')->nullable()->comment('完了日時');
             $table->timestamps();
-            
+
             // インデックス
             $table->index('store_id', 'idx_orders_store_id');
             $table->index('session_id', 'idx_orders_session_id');

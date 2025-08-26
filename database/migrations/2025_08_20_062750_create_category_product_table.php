@@ -17,22 +17,22 @@ return new class extends Migration
             $table->unsignedBigInteger('category_id')->comment('カテゴリID');
             $table->integer('sort_order')->default(0)->comment('ソート順');
             $table->timestamps();
-            
+
             // インデックス
             $table->index('product_id', 'idx_category_product_product_id');
             $table->index('category_id', 'idx_category_product_category_id');
             $table->index('sort_order', 'idx_category_product_sort_order');
-            
+
             // 外部キー制約
             $table->foreign('product_id')
-                  ->references('id')
-                  ->on('products')
-                  ->onDelete('cascade');
+                ->references('id')
+                ->on('products')
+                ->onDelete('cascade');
             $table->foreign('category_id')
-                  ->references('id')
-                  ->on('categories')
-                  ->onDelete('cascade');
-            
+                ->references('id')
+                ->on('categories')
+                ->onDelete('cascade');
+
             // テーブルコメント
             $table->comment('商品カテゴリ紐付け');
         });

@@ -2,10 +2,10 @@
 
 namespace Database\Seeders;
 
-use App\Models\Store;
-use App\Models\User;
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\Store;
+use App\Models\User;
 use Illuminate\Database\Seeder;
 
 class TestDataSeeder extends Seeder
@@ -17,10 +17,10 @@ class TestDataSeeder extends Seeder
     {
         // テスト用店舗作成
         $testStore = Store::factory()->testStore()->create();
-        
+
         // 追加の店舗作成（SuperAdmin用テスト）
         $stores = Store::factory()->count(2)->create();
-        
+
         // テスト用ユーザー作成
         $superAdmin = User::factory()->testSuperAdmin()->create();
         $admin = User::factory()->admin()->forStore($testStore->id)->create([
@@ -55,9 +55,9 @@ class TestDataSeeder extends Seeder
             ['name' => '塩ラーメン', 'price' => 800, 'availability_status' => 'available'],
             ['name' => '特製醤油ラーメン', 'price' => 1200, 'availability_status' => 'available'],
             ['name' => '限定豚骨ラーメン', 'price' => 900, 'availability_status' => 'sold_out'],
-        ])->map(function ($productData) use ($testStore, $ramenCategory) {
+        ])->map(function ($productData) use ($testStore) {
             return Product::factory()->forStore($testStore->id)->create(array_merge($productData, [
-                'description' => $productData['name'] . 'の説明文です。',
+                'description' => $productData['name'].'の説明文です。',
                 'tax_in_price' => round($productData['price'] * 1.1),
             ]));
         });
@@ -68,9 +68,9 @@ class TestDataSeeder extends Seeder
             ['name' => '半熟煮卵', 'price' => 150, 'availability_status' => 'available'],
             ['name' => 'もやし', 'price' => 100, 'availability_status' => 'available'],
             ['name' => '餃子（5個）', 'price' => 450, 'availability_status' => 'available'],
-        ])->map(function ($productData) use ($testStore, $sideCategory) {
+        ])->map(function ($productData) use ($testStore) {
             return Product::factory()->forStore($testStore->id)->create(array_merge($productData, [
-                'description' => $productData['name'] . 'の説明文です。',
+                'description' => $productData['name'].'の説明文です。',
                 'tax_in_price' => round($productData['price'] * 1.1),
             ]));
         });
@@ -80,17 +80,17 @@ class TestDataSeeder extends Seeder
             ['name' => 'ビール', 'price' => 500, 'availability_status' => 'available'],
             ['name' => 'ウーロン茶', 'price' => 200, 'availability_status' => 'available'],
             ['name' => 'コーラ', 'price' => 250, 'availability_status' => 'available'],
-        ])->map(function ($productData) use ($testStore, $drinkCategory) {
+        ])->map(function ($productData) use ($testStore) {
             return Product::factory()->forStore($testStore->id)->create(array_merge($productData, [
-                'description' => $productData['name'] . 'の説明文です。',
+                'description' => $productData['name'].'の説明文です。',
                 'tax_in_price' => round($productData['price'] * 1.1),
             ]));
         });
 
         // 商品とカテゴリの関連付け
-        $ramenProducts->each(fn($product) => $product->categories()->attach($ramenCategory));
-        $sideProducts->each(fn($product) => $product->categories()->attach($sideCategory));
-        $drinkProducts->each(fn($product) => $product->categories()->attach($drinkCategory));
+        $ramenProducts->each(fn ($product) => $product->categories()->attach($ramenCategory));
+        $sideProducts->each(fn ($product) => $product->categories()->attach($sideCategory));
+        $drinkProducts->each(fn ($product) => $product->categories()->attach($drinkCategory));
 
         // TODO: 未実装機能 - Session/Orderモデル実装後に有効化
         /*
@@ -105,6 +105,6 @@ class TestDataSeeder extends Seeder
         $this->command->info("Staff: {$staff->email} (password: password)");
         $this->command->info("店舗: {$testStore->name} (ID: {$testStore->id})");
         $this->command->info("カテゴリ数: {$categories->count()}");
-        $this->command->info("商品数: " . ($ramenProducts->count() + $sideProducts->count() + $drinkProducts->count()));
+        $this->command->info('商品数: '.($ramenProducts->count() + $sideProducts->count() + $drinkProducts->count()));
     }
 }

@@ -20,7 +20,7 @@ return new class extends Migration
             $table->integer('total_price')->comment('小計（円）');
             $table->text('memo')->nullable()->comment('備考メモ');
             $table->timestamps();
-            
+
             // インデックス
             $table->index('order_id', 'idx_order_items_order_id');
             $table->index('product_id', 'idx_order_items_product_id');

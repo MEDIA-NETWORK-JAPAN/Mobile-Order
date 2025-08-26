@@ -2,9 +2,9 @@
 
 namespace Tests\Unit;
 
+use App\Models\Category;
 use App\Models\Product;
 use App\Models\Store;
-use App\Models\Category;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -13,12 +13,13 @@ class ProductModelTest extends TestCase
     use RefreshDatabase;
 
     private Store $store;
+
     private Category $category;
 
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         $this->store = Store::factory()->create();
         $this->category = Category::factory()->forStore($this->store->id)->create();
     }
@@ -148,7 +149,7 @@ class ProductModelTest extends TestCase
     {
         $store1 = Store::factory()->create();
         $store2 = Store::factory()->create();
-        
+
         $product1 = Product::factory()->forStore($store1->id)->create();
         $product2 = Product::factory()->forStore($store2->id)->create();
 

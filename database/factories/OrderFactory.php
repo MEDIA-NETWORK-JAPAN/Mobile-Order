@@ -2,8 +2,8 @@
 
 namespace Database\Factories;
 
-use App\Models\Store;
 use App\Models\Session;
+use App\Models\Store;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -20,7 +20,7 @@ class OrderFactory extends Factory
         $taxAmount = round($subtotal * 0.1);
         $serviceCharge = round($subtotal * 0.05);
         $totalAmount = $subtotal + $taxAmount + $serviceCharge;
-        
+
         return [
             'store_id' => Store::factory(),
             'session_id' => Session::factory(),
@@ -155,6 +155,6 @@ class OrderFactory extends Factory
      */
     private function generateOrderNumber(): string
     {
-        return 'ORD-' . date('ymd') . '-' . str_pad($this->faker->numberBetween(1, 9999), 4, '0', STR_PAD_LEFT);
+        return 'ORD-'.date('ymd').'-'.str_pad($this->faker->numberBetween(1, 9999), 4, '0', STR_PAD_LEFT);
     }
 }

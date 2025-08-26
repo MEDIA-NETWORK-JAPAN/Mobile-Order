@@ -12,7 +12,7 @@
         {{-- 統計カード --}}
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {{-- 今日の注文数 --}}
-            <div class="card-container">
+            <div class="card bg-base-100 shadow-xl p-6">
                 <div class="flex items-center">
                     <div class="flex-shrink-0">
                         <x-mary-icon name="o-shopping-cart" class="h-8 w-8 text-blue-600" />
@@ -33,7 +33,7 @@
             </div>
 
             {{-- 今日の売上 --}}
-            <div class="card-container">
+            <div class="card bg-base-100 shadow-xl p-6">
                 <div class="flex items-center">
                     <div class="flex-shrink-0">
                         <x-mary-icon name="o-banknotes" class="h-8 w-8 text-green-600" />
@@ -54,7 +54,7 @@
             </div>
 
             {{-- アクティブ商品数 --}}
-            <div class="card-container">
+            <div class="card bg-base-100 shadow-xl p-6">
                 <div class="flex items-center">
                     <div class="flex-shrink-0">
                         <x-mary-icon name="o-cube" class="h-8 w-8 text-amber-600" />
@@ -72,7 +72,7 @@
             </div>
 
             {{-- 在庫切れ商品 --}}
-            <div class="card-container">
+            <div class="card bg-base-100 shadow-xl p-6">
                 <div class="flex items-center">
                     <div class="flex-shrink-0">
                         <x-mary-icon name="o-exclamation-triangle" class="h-8 w-8 text-red-600" />
@@ -93,7 +93,7 @@
         </div>
 
         {{-- クイックアクション --}}
-        <div class="card-container">
+        <div class="card bg-base-100 shadow-xl p-6">
             <div class="card-header">
                 <h2 class="card-title">クイックアクション</h2>
             </div>
@@ -128,51 +128,51 @@
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {{-- 最新の注文 --}}
-            <div class="card-container">
-                <div class="card-header">
-                    <h2 class="card-title">最新の注文</h2>
+            <div class="card bg-base-100 shadow-xl p-6">
+                <div class="mb-4">
+                    <h2 class="text-xl font-semibold">最新の注文</h2>
                 </div>
                 @if(isset($recentOrders) && $recentOrders->count() > 0)
                     <div class="space-y-4">
                         @foreach($recentOrders as $order)
-                            <div class="list-item">
-                                <div class="list-item-content">
+                            <div class="p-4 bg-base-200 rounded-lg">
+                                <div class="flex items-center justify-between">
                                     <div class="flex-1">
-                                        <div class="list-item-title">注文 #{{ $order->id }}</div>
-                                        <div class="list-item-description">
+                                        <div class="font-medium text-gray-900">注文 #{{ $order->id }}</div>
+                                        <div class="text-sm text-gray-500">
                                             {{ $order->created_at->format('H:i') }} - ¥{{ number_format($order->total_amount) }}
                                         </div>
                                     </div>
-                                    <div class="status-badge status-badge-{{ $order->status_color }}">
+                                    <span class="badge badge-{{ $order->status_color }}">
                                         {{ $order->status_label }}
-                                    </div>
+                                    </span>
                                 </div>
                             </div>
                         @endforeach
                     </div>
                     <div class="mt-4">
-                        <a href="#" class="btn-ghost text-primary-600">
+                        <a href="#" class="btn btn-ghost text-primary">
                             すべての注文を見る
                         </a>
                     </div>
                 @else
-                    <div class="empty-state">
+                    <div class="text-center py-8">
                         <x-mary-icon name="o-clipboard-document-list" class="empty-state-icon" />
-                        <h3 class="empty-state-title">注文がありません</h3>
-                        <p class="empty-state-description">新しい注文が入ると、ここに表示されます。</p>
+                        <h3 class="text-lg font-medium text-gray-900 mb-2">注文がありません</h3>
+                        <p class="text-gray-500">新しい注文が入ると、ここに表示されます。</p>
                     </div>
                 @endif
             </div>
 
             {{-- 人気商品 --}}
-            <div class="card-container">
-                <div class="card-header">
-                    <h2 class="card-title">人気商品（今週）</h2>
+            <div class="card bg-base-100 shadow-xl p-6">
+                <div class="mb-4">
+                    <h2 class="text-xl font-semibold">人気商品（今週）</h2>
                 </div>
                 @if(isset($popularProducts) && $popularProducts->count() > 0)
                     <div class="space-y-4">
                         @foreach($popularProducts as $product)
-                            <div class="list-item">
+                            <div class="p-4 bg-base-200 rounded-lg">
                                 <div class="flex items-center space-x-4">
                                     <div class="flex-shrink-0">
                                         <img class="h-10 w-10 rounded-lg object-cover" 
@@ -180,8 +180,8 @@
                                              alt="{{ $product->name }}">
                                     </div>
                                     <div class="flex-1 min-w-0">
-                                        <div class="list-item-title truncate">{{ $product->name }}</div>
-                                        <div class="list-item-description">
+                                        <div class="font-medium text-gray-900 truncate">{{ $product->name }}</div>
+                                        <div class="text-sm text-gray-500">
                                             {{ $product->orders_count }}回注文
                                         </div>
                                     </div>
@@ -193,10 +193,10 @@
                         @endforeach
                     </div>
                 @else
-                    <div class="empty-state">
+                    <div class="text-center py-8">
                         <x-mary-icon name="o-chart-bar" class="empty-state-icon" />
-                        <h3 class="empty-state-title">データがありません</h3>
-                        <p class="empty-state-description">注文データが蓄積されると、人気商品が表示されます。</p>
+                        <h3 class="text-lg font-medium text-gray-900 mb-2">データがありません</h3>
+                        <p class="text-gray-500">注文データが蓄積されると、人気商品が表示されます。</p>
                     </div>
                 @endif
             </div>
@@ -204,9 +204,9 @@
 
         {{-- システム状態（SuperAdminのみ） --}}
         @if(auth()->user()->isSuperAdmin())
-            <div class="card-container">
-                <div class="card-header">
-                    <h2 class="card-title">システム状態</h2>
+            <div class="card bg-base-100 shadow-xl p-6">
+                <div class="mb-4">
+                    <h2 class="text-xl font-semibold">システム状態</h2>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div class="flex items-center">

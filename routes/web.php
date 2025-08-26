@@ -1,7 +1,7 @@
 <?php
 
-use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -16,8 +16,9 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::get('/', function () {
-    $adminUrl = '/' . config('app.admin_prefix');
-    return response('<h1>Mobile Order System</h1><p>システムが正常に動作しています。</p><a href="' . $adminUrl . '">管理画面へ</a>');
+    $adminUrl = '/'.config('app.admin_prefix');
+
+    return response('<h1>Mobile Order System</h1><p>システムが正常に動作しています。</p><a href="'.$adminUrl.'">管理画面へ</a>');
 });
 
 Route::get('/dashboard', function () {
@@ -33,16 +34,19 @@ Route::middleware('auth')->group(function () {
 // Admin routes - Dynamic prefix for security
 Route::middleware(['auth', 'verified'])->prefix(config('app.admin_prefix'))->name('admin.')->group(function () {
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
-    
+
     // Products
     Route::get('/products', App\Livewire\Admin\Products\ProductIndex::class)->name('products.index');
-    Route::get('/products/create', App\Livewire\Admin\Products\ProductForm::class)->name('products.create');
-    Route::get('/products/{product}/edit', App\Livewire\Admin\Products\ProductForm::class)->name('products.edit');
-    
+    Route::get('/products/create', [App\Http\Controllers\Admin\ProductController::class, 'create'])->name('products.create');
+    Route::post('/products', [App\Http\Controllers\Admin\ProductController::class, 'store'])->name('products.store');
+    Route::get('/products/{product}/edit', [App\Http\Controllers\Admin\ProductController::class, 'edit'])->name('products.edit');
+    Route::put('/products/{product}', [App\Http\Controllers\Admin\ProductController::class, 'update'])->name('products.update');
+    Route::delete('/products/{product}', [App\Http\Controllers\Admin\ProductController::class, 'destroy'])->name('products.destroy');
+
     // Categories
     Route::get('/categories', App\Livewire\Admin\Categories\CategoryIndex::class)->name('categories.index');
     Route::get('/categories/create', App\Livewire\Admin\Categories\CategoryCreate::class)->name('categories.create');
-    
+
     // Orders (Phase 3で実装予定)
     Route::get('/orders', function () {
         return response('
@@ -93,8 +97,8 @@ Route::middleware(['auth', 'verified'])->prefix(config('app.admin_prefix'))->nam
         </html>
         ');
     })->name('orders.index');
-    
-    // Reports (Phase 4で実装予定)  
+
+    // Reports (Phase 4で実装予定)
     Route::get('/reports', function () {
         return response('
         <!DOCTYPE html>
@@ -144,7 +148,7 @@ Route::middleware(['auth', 'verified'])->prefix(config('app.admin_prefix'))->nam
         </html>
         ');
     })->name('reports.index');
-    
+
     // System Management (SuperAdminのみ、Phase 3で実装予定)
     Route::get('/stores', function () {
         return response('
@@ -195,7 +199,7 @@ Route::middleware(['auth', 'verified'])->prefix(config('app.admin_prefix'))->nam
         </html>
         ');
     })->name('stores.index');
-    
+
     Route::get('/users', function () {
         return response('
         <!DOCTYPE html>

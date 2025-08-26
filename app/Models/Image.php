@@ -40,6 +40,6 @@ class Image extends Model
     // アクセサ
     public function getUrlAttribute()
     {
-        return asset('storage/images/' . $this->filename);
+        return asset('storage/images/'.$this->filename);
     }
 }

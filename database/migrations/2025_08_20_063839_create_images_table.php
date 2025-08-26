@@ -18,21 +18,21 @@ return new class extends Migration
             $table->string('filename', 45)->comment('画像ファイル名');
             $table->integer('sort_order')->default(0)->comment('ソート順');
             $table->timestamps();
-            
+
             // インデックス
             $table->index('product_id', 'idx_images_product_id');
             $table->index('sort_order', 'idx_images_sort_order');
-            
+
             // 外部キー制約
             $table->foreign('product_id')
-                  ->references('id')
-                  ->on('products')
-                  ->onDelete('cascade');
+                ->references('id')
+                ->on('products')
+                ->onDelete('cascade');
             $table->foreign('store_id')
-                  ->references('id')
-                  ->on('stores')
-                  ->onDelete('restrict');
-            
+                ->references('id')
+                ->on('stores')
+                ->onDelete('restrict');
+
             // テーブルコメント
             $table->comment('商品画像マスター');
         });

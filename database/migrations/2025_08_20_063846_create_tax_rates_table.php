@@ -16,10 +16,10 @@ return new class extends Migration
             $table->enum('tax_type', ['standard', 'reduced', 'exempt', 'non_taxable'])->comment('税区分');
             $table->decimal('rate', 5, 2)->comment('税率（%）');
             $table->timestamps();
-            
+
             // インデックス
             $table->index('tax_type', 'idx_tax_rates_tax_type');
-            
+
             // テーブルコメント
             $table->comment('税率マスター');
         });

@@ -17,7 +17,7 @@ class DatabaseSeeder extends Seeder
             $this->call([
                 TestDataSeeder::class,
             ]);
-            
+
             $this->command->info('開発・テスト環境用のデータを投入しました。');
         } else {
             $this->command->info('本番環境では手動でデータを管理してください。');

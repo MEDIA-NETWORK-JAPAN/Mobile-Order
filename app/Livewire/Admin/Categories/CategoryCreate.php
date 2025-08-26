@@ -12,8 +12,11 @@ class CategoryCreate extends Component
     use Toast;
 
     public $store_id = '';
+
     public $name = '';
+
     public $sort_order = 0;
+
     public $is_active = true;
 
     protected $rules = [
@@ -26,7 +29,7 @@ class CategoryCreate extends Component
     public function mount()
     {
         $user = auth()->user();
-        if (!$user->isSuperAdmin()) {
+        if (! $user->isSuperAdmin()) {
             $this->store_id = $user->store_id;
         }
     }
@@ -36,23 +39,25 @@ class CategoryCreate extends Component
         $this->validate();
 
         $user = auth()->user();
-        
+
         // SuperAdmin権限チェック（緊急編集機能）
-        if (!$user->isSuperAdmin()) {
+        if (! $user->isSuperAdmin()) {
             $this->error('カテゴリの編集権限がありません。カテゴリマスターデータはPOS側で管理されています。緊急編集にはSuperAdmin権限が必要です。');
+
             return;
         }
-        
+
         // 権限チェック
-        if (!$user->hasStoreAccess($this->store_id)) {
+        if (! $user->hasStoreAccess($this->store_id)) {
             $this->error('この店舗にカテゴリを追加する権限がありません。');
+
             return;
         }
 
         Category::create([
             'store_id' => $this->store_id,
             'name' => $this->name,
-            'sort_order' => (int)$this->sort_order,
+            'sort_order' => (int) $this->sort_order,
             'is_active' => $this->is_active,
         ]);
 
@@ -69,6 +74,6 @@ class CategoryCreate extends Component
         return view('livewire.admin.categories.category-create', [
             'stores' => $stores,
             'canEdit' => $user->isSuperAdmin(), // 編集権限フラグ
-        ]);
+        ])->layout('components.layouts.admin', ['title' => 'カテゴリ作成 - 管理画面']);
     }
 }

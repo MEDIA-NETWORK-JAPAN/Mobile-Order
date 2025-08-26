@@ -19,19 +19,19 @@ return new class extends Migration
             $table->text('description')->nullable()->comment('設定説明');
             $table->boolean('is_public')->default(false)->comment('公開設定フラグ');
             $table->timestamps();
-            
+
             // 複合ユニークキー（店舗ID + 設定キー）
             $table->unique(['store_id', 'key'], 'uk_system_settings_store_key');
-            
+
             // インデックス
             $table->index('key', 'idx_system_settings_key');
-            
+
             // 外部キー制約
             $table->foreign('store_id')
-                  ->references('id')
-                  ->on('stores')
-                  ->onDelete('cascade');
-            
+                ->references('id')
+                ->on('stores')
+                ->onDelete('cascade');
+
             // テーブルコメント
             $table->comment('システム設定');
         });

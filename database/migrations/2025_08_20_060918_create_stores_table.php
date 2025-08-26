@@ -25,11 +25,11 @@ return new class extends Migration
             $table->boolean('is_active')->default(true)->comment('アクティブフラグ');
             $table->timestamps();
             $table->softDeletes();
-            
+
             // インデックス
             $table->index('code', 'idx_stores_code');
             $table->index('is_active', 'idx_stores_is_active');
-            
+
             // テーブルコメント
             $table->comment('店舗');
         });

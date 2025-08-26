@@ -28,7 +28,7 @@ return new class extends Migration
             $table->string('ip_address', 45)->nullable()->comment('IPアドレス');
             $table->text('user_agent')->nullable()->comment('ユーザーエージェント');
             $table->timestamps();
-            
+
             // インデックス
             $table->index('guest_token', 'idx_cart_logs_guest_token');
             $table->index('session_id', 'idx_cart_logs_session_id');

@@ -25,7 +25,7 @@ return new class extends Migration
             $table->timestamp('synced_at')->nullable()->comment('POS同期日時');
             $table->foreignId('synced_by')->nullable()->constrained('users')->onDelete('set null')->comment('POS同期ユーザーID');
             $table->timestamps();
-            
+
             // インデックス
             $table->index(['entity_type', 'entity_id'], 'idx_change_logs_entity');
             $table->index('action', 'idx_change_logs_action');

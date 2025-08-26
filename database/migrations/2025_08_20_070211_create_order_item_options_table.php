@@ -22,7 +22,7 @@ return new class extends Migration
             $table->integer('unit_price')->comment('単価（スナップショット、円）');
             $table->integer('total_price')->comment('小計（数量×単価、円）');
             $table->timestamps();
-            
+
             // インデックス
             $table->index('order_item_id', 'idx_order_item_options_order_item_id');
             $table->index('option_id', 'idx_order_item_options_option_id');

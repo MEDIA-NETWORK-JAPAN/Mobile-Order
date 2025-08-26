@@ -18,21 +18,21 @@ return new class extends Migration
             $table->boolean('default_selected')->default(false)->comment('デフォルトフラグ（画面表示時に選択される）');
             $table->integer('sort_order')->default(0)->comment('ソート順');
             $table->timestamps();
-            
+
             // インデックス
             $table->index('option_id', 'idx_option_detail_option_id');
             $table->index('product_id', 'idx_option_detail_product_id');
-            
+
             // 外部キー制約
             $table->foreign('option_id')
-                  ->references('id')
-                  ->on('options')
-                  ->onDelete('cascade');
+                ->references('id')
+                ->on('options')
+                ->onDelete('cascade');
             $table->foreign('product_id')
-                  ->references('id')
-                  ->on('products')
-                  ->onDelete('cascade');
-            
+                ->references('id')
+                ->on('products')
+                ->onDelete('cascade');
+
             // テーブルコメント
             $table->comment('商品オプション詳細');
         });

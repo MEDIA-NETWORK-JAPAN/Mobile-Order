@@ -22,22 +22,22 @@ return new class extends Migration
             $table->timestamp('started_at')->nullable()->comment('開始日時');
             $table->timestamp('completed_at')->nullable()->comment('完了日時');
             $table->timestamps();
-            
+
             // ユニークキー
             $table->unique('session_id', 'uk_sessions_session_id');
-            
+
             // インデックス
             $table->index('store_id', 'idx_sessions_store_id');
             $table->index('table_number', 'idx_sessions_table_number');
             $table->index('status', 'idx_sessions_status');
             $table->index('expires_at', 'idx_sessions_expires_at');
-            
+
             // 外部キー制約
             $table->foreign('store_id')
-                  ->references('id')
-                  ->on('stores')
-                  ->onDelete('restrict');
-            
+                ->references('id')
+                ->on('stores')
+                ->onDelete('restrict');
+
             // テーブルコメント
             $table->comment('セッション管理（全てPOS端末で生成）');
         });

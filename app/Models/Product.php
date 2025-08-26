@@ -47,17 +47,17 @@ class Product extends Model
     public function categories()
     {
         return $this->belongsToMany(Category::class, 'category_product')
-                    ->withPivot('sort_order')
-                    ->withTimestamps()
-                    ->orderBy('pivot_sort_order');
+            ->withPivot('sort_order')
+            ->withTimestamps()
+            ->orderBy('pivot_sort_order');
     }
 
     public function options()
     {
         return $this->belongsToMany(Option::class, 'product_to_options')
-                    ->withPivot('sort_order')
-                    ->withTimestamps()
-                    ->orderBy('pivot_sort_order');
+            ->withPivot('sort_order')
+            ->withTimestamps()
+            ->orderBy('pivot_sort_order');
     }
 
     public function optionDetails()
@@ -109,6 +109,7 @@ class Product extends Model
         if ($this->translations && isset($this->translations[$language]['name'])) {
             return $this->translations[$language]['name'];
         }
+
         return $this->name;
     }
 
@@ -117,6 +118,7 @@ class Product extends Model
         if ($this->translations && isset($this->translations[$language]['description'])) {
             return $this->translations[$language]['description'];
         }
+
         return $this->description;
     }
 }

@@ -28,18 +28,21 @@ class TaxRate extends Model
     public static function getRate($taxType)
     {
         $taxRate = static::where('tax_type', $taxType)->first();
+
         return $taxRate ? $taxRate->rate : 0;
     }
 
     public static function calculateTaxAmount($amount, $taxType)
     {
         $rate = static::getRate($taxType);
+
         return round($amount * ($rate / 100));
     }
 
     public static function calculateTaxIncludedAmount($amount, $taxType)
     {
         $taxAmount = static::calculateTaxAmount($amount, $taxType);
+
         return $amount + $taxAmount;
     }
 }

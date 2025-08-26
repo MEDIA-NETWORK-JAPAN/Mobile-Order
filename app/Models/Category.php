@@ -32,9 +32,9 @@ class Category extends Model
     public function products()
     {
         return $this->belongsToMany(Product::class, 'category_product')
-                    ->withPivot('sort_order')
-                    ->withTimestamps()
-                    ->orderBy('pivot_sort_order');
+            ->withPivot('sort_order')
+            ->withTimestamps()
+            ->orderBy('pivot_sort_order');
     }
 
     // スコープ
@@ -59,6 +59,7 @@ class Category extends Model
         if ($this->translations && isset($this->translations[$language])) {
             return $this->translations[$language];
         }
+
         return $this->name;
     }
 }

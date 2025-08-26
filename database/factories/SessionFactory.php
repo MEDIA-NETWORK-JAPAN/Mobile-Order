@@ -108,6 +108,6 @@ class SessionFactory extends Factory
      */
     private function generateQrCode(): string
     {
-        return Str::random(12) . '-' . Str::random(8);
+        return Str::random(12).'-'.Str::random(8);
     }
 }

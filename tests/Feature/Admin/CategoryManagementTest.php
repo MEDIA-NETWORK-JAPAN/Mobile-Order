@@ -2,9 +2,9 @@
 
 namespace Tests\Feature\Admin;
 
-use App\Models\User;
-use App\Models\Store;
 use App\Models\Category;
+use App\Models\Store;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -14,7 +14,9 @@ class CategoryManagementTest extends TestCase
     use RefreshDatabase;
 
     private User $superAdmin;
+
     private User $admin;
+
     private Store $store;
 
     protected function setUp(): void
@@ -208,7 +210,7 @@ class CategoryManagementTest extends TestCase
     {
         // 自店舗のカテゴリ
         $ownCategory = Category::factory()->forStore($this->store->id)->create(['name' => '自店舗カテゴリ']);
-        
+
         // 他店舗のカテゴリ
         $otherStore = Store::factory()->create();
         $otherCategory = Category::factory()->forStore($otherStore->id)->create(['name' => '他店舗カテゴリ']);
@@ -223,7 +225,7 @@ class CategoryManagementTest extends TestCase
     {
         // 複数店舗のカテゴリ
         $store1Category = Category::factory()->forStore($this->store->id)->create(['name' => '店舗1カテゴリ']);
-        
+
         $store2 = Store::factory()->create();
         $store2Category = Category::factory()->forStore($store2->id)->create(['name' => '店舗2カテゴリ']);
 

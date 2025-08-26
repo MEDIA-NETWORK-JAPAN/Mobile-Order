@@ -23,8 +23,8 @@ class AuthenticatedSessionController extends Controller
         <head><title>ログイン</title></head>
         <body>
         <h1>Mobile Order System - ログイン</h1>
-        <form method="POST" action="' . route('login') . '">
-            ' . csrf_field() . '
+        <form method="POST" action="'.route('login').'">
+            '.csrf_field().'
             <div>
                 <label for="email">Email:</label>
                 <input type="email" name="email" id="email" required>

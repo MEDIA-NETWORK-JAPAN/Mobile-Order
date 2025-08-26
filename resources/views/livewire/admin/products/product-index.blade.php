@@ -14,51 +14,53 @@
     @endif
 
     {{-- ヘッダー --}}
-    <div class="flex justify-between items-center mb-6">
+    <div class="flex justify-between items-center m-6">
         <h2 class="text-2xl font-bold">商品管理</h2>
         @if($canEdit)
-            <x-mary-button wire:click="create" class="btn-primary">
-                新規商品追加
-            </x-mary-button>
+            <a href="{{ route('admin.products.create') }}" wire:navigate>
+                <button class="px-4 py-2 font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">
+                    新規商品追加
+                </button>
+            </a>
         @endif
     </div>
 
     {{-- フィルター --}}
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <x-mary-input 
-            wire:model.live="search" 
-            placeholder="商品名・コードで検索..." 
+        <x-mary-input
+            wire:model.live="search"
+            placeholder="商品名・コードで検索..."
             type="search"
         />
-        
+
         @if($stores->count() > 0)
-            <x-mary-select 
-                wire:model.live="selectedStore" 
-                :options="$stores" 
-                option-label="name" 
-                option-value="id" 
+            <x-mary-select
+                wire:model.live="selectedStore"
+                :options="$stores"
+                option-label="name"
+                option-value="id"
                 placeholder="店舗を選択"
             />
         @endif
-        
-        <x-mary-select 
-            wire:model.live="selectedCategory" 
-            :options="$categories" 
-            option-label="name" 
-            option-value="id" 
+
+        <x-mary-select
+            wire:model.live="selectedCategory"
+            :options="$categories"
+            option-label="name"
+            option-value="id"
             placeholder="カテゴリを選択"
         />
-        
-        <x-mary-select 
-            wire:model.live="availabilityFilter" 
+
+        <x-mary-select
+            wire:model.live="availabilityFilter"
             :options="[
                 ['value' => 'available', 'label' => '販売中'],
                 ['value' => 'sold_out', 'label' => '売り切れ'],
                 ['value' => 'not_arrived', 'label' => '未入荷'],
                 ['value' => 'preparing', 'label' => '準備中']
-            ]" 
-            option-label="label" 
-            option-value="value" 
+            ]"
+            option-label="label"
+            option-value="value"
             placeholder="在庫状態"
         />
     </div>
@@ -100,7 +102,7 @@
                         <td>{{ $product->name }}</td>
                         <td>
                             @foreach($product->categories as $category)
-                                <x-mary-badge>{{ $category->name }}</x-mary-badge>
+                                <span class="badge badge-outline badge-primary">{{ $category->name }}</span>
                             @endforeach
                         </td>
                         <td>¥{{ number_format($product->price) }}</td>
@@ -108,38 +110,44 @@
                         <td>
                             @switch($product->availability_status)
                                 @case('available')
-                                    <x-mary-badge type="success">販売中</x-mary-badge>
+                                    <span class="badge badge-success">販売中</span>
                                     @break
                                 @case('sold_out')
-                                    <x-mary-badge type="error">売り切れ</x-mary-badge>
+                                    <span class="badge badge-error">売り切れ</span>
                                     @break
                                 @case('not_arrived')
-                                    <x-mary-badge type="warning">未入荷</x-mary-badge>
+                                    <span class="badge badge-warning">未入荷</span>
                                     @break
                                 @case('preparing')
-                                    <x-mary-badge type="info">準備中</x-mary-badge>
+                                    <span class="badge badge-info">準備中</span>
                                     @break
                             @endswitch
                         </td>
                         <td>
                             @if($product->is_active)
-                                <x-mary-badge type="success">有効</x-mary-badge>
+                                <span class="badge badge-success">有効</span>
                             @else
-                                <x-mary-badge type="error">無効</x-mary-badge>
+                                <span class="badge badge-error">無効</span>
                             @endif
                         </td>
                         <td>
                             @if($canEdit)
-                                <x-mary-button wire:click="edit({{ $product->id }})" size="sm" class="btn-ghost">
-                                    編集
-                                </x-mary-button>
-                                <x-mary-button wire:click="delete({{ $product->id }})" size="sm" class="btn-ghost text-error">
+                                <a href="{{ route('admin.products.edit', $product) }}" wire:navigate>
+                                    <button class="px-3 py-1 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors mr-2">
+                                        編集
+                                    </button>
+                                </a>
+                                <button wire:click="deleteProduct({{ $product->id }})"
+                                        class="px-3 py-1 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-md transition-colors"
+                                        onclick="return confirm('本当にこの商品を削除しますか？')">
                                     削除
-                                </x-mary-button>
+                                </button>
                             @else
-                                <x-mary-button wire:click="view({{ $product->id }})" size="sm" class="btn-ghost">
-                                    詳細
-                                </x-mary-button>
+                                <a href="{{ route('admin.products.edit', $product) }}" wire:navigate>
+                                    <button class="px-3 py-1 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors">
+                                        詳細
+                                    </button>
+                                </a>
                             @endif
                         </td>
                     </tr>

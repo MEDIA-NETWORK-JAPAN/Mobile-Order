@@ -20,7 +20,7 @@ return new class extends Migration
             $table->unsignedInteger('timeout_threshold_seconds')->default(30)->comment('タイムアウト閾値（秒）');
             $table->unsignedInteger('error_threshold_seconds')->default(90)->comment('エラー閾値（秒）');
             $table->timestamps();
-            
+
             // インデックス
             $table->unique('store_id', 'uk_pos_health_checks_store');
             $table->index('status', 'idx_pos_health_checks_status');

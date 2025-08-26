@@ -2,10 +2,10 @@
 
 namespace Tests\Feature\Admin;
 
-use App\Models\User;
-use App\Models\Store;
-use App\Models\Product;
 use App\Models\Order;
+use App\Models\Product;
+use App\Models\Store;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -14,7 +14,9 @@ class DashboardTest extends TestCase
     use RefreshDatabase;
 
     private User $superAdmin;
+
     private User $admin;
+
     private Store $store;
 
     protected function setUp(): void
@@ -90,7 +92,7 @@ class DashboardTest extends TestCase
 
         $response->assertStatus(200);
         $response->assertViewHas(['todayOrders', 'activeProducts', 'totalProducts']);
-        
+
         // 自店舗のデータのみ表示されることを確認
         $this->assertEquals(3, $response->viewData('todayOrders'));
     }
@@ -99,12 +101,12 @@ class DashboardTest extends TestCase
     {
         // 昨日のデータ
         Order::factory()->yesterday()->forStore($this->store->id)->count(2)->create([
-            'total_amount' => 1000
+            'total_amount' => 1000,
         ]);
 
         // 今日のデータ
         Order::factory()->today()->forStore($this->store->id)->count(4)->create([
-            'total_amount' => 1500
+            'total_amount' => 1500,
         ]);
 
         $response = $this->actingAs($this->admin)
@@ -112,7 +114,7 @@ class DashboardTest extends TestCase
 
         $response->assertStatus(200);
         $response->assertViewHas(['orderGrowth', 'salesGrowth']);
-        
+
         // 成長率計算の確認
         $orderGrowth = $response->viewData('orderGrowth');
         $this->assertStringContainsString('+', $orderGrowth);
@@ -128,7 +130,7 @@ class DashboardTest extends TestCase
 
         $response->assertStatus(200);
         $response->assertViewHas('recentOrders');
-        
+
         // 最新5件のみ表示されることを確認
         $recentOrders = $response->viewData('recentOrders');
         $this->assertCount(5, $recentOrders);
@@ -138,7 +140,7 @@ class DashboardTest extends TestCase
     {
         // 商品と注文を作成
         $products = Product::factory()->forStore($this->store->id)->count(3)->create();
-        
+
         $response = $this->actingAs($this->admin)
             ->get(route('admin.dashboard'));
 

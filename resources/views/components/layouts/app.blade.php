@@ -15,7 +15,7 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
 </head>
-<body class="bg-gray-50 font-sans antialiased">
+<body class="bg-gray-50 font-sans antialiased" data-theme="light">
     {{-- アプリケーション全体のレイアウト --}}
     <div class="min-h-screen flex flex-col">
         {{-- ヘッダー（モバイル・タブレット・デスクトップ対応） --}}

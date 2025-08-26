@@ -31,9 +31,9 @@ class Option extends Model
     public function products()
     {
         return $this->belongsToMany(Product::class, 'product_to_options')
-                    ->withPivot('sort_order')
-                    ->withTimestamps()
-                    ->orderBy('pivot_sort_order');
+            ->withPivot('sort_order')
+            ->withTimestamps()
+            ->orderBy('pivot_sort_order');
     }
 
     public function optionDetails()
@@ -68,6 +68,7 @@ class Option extends Model
         if ($this->translations && isset($this->translations[$language])) {
             return $this->translations[$language];
         }
+
         return $this->title;
     }
 }
