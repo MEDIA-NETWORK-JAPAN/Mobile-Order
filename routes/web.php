@@ -47,6 +47,10 @@ Route::middleware(['auth', 'verified'])->prefix(config('app.admin_prefix'))->nam
     Route::get('/categories', App\Livewire\Admin\Categories\CategoryIndex::class)->name('categories.index');
     Route::get('/categories/create', App\Livewire\Admin\Categories\CategoryCreate::class)->name('categories.create');
 
+    // Options
+    Route::get('/options', App\Livewire\Admin\Options\OptionIndex::class)->name('options.index');
+    Route::get('/options/create', App\Livewire\Admin\Options\OptionCreate::class)->name('options.create');
+
     // Orders (Phase 3で実装予定)
     Route::get('/orders', function () {
         return response('

@@ -85,7 +85,11 @@
                                 />
                             </td>
                             <td>{{ $category->store->name }}</td>
-                            <td>{{ $category->products_count }}</td>
+                            <td>
+                                <button wire:click="viewProducts({{ $category->id }})" class="text-blue-600 hover:text-blue-800 underline">
+                                    {{ $category->products_count }}件
+                                </button>
+                            </td>
                             <td>
                                 @if($category->is_active)
                                     <span class="inline-block px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">有効</span>
@@ -106,7 +110,11 @@
                             <td>{{ $category->sort_order }}</td>
                             <td>{{ $category->name }}</td>
                             <td>{{ $category->store->name }}</td>
-                            <td>{{ $category->products_count }}</td>
+                            <td>
+                                <button wire:click="viewProducts({{ $category->id }})" class="text-blue-600 hover:text-blue-800 underline">
+                                    {{ $category->products_count }}件
+                                </button>
+                            </td>
                             <td>
                                 @if($category->is_active)
                                     <span class="inline-block px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">有効</span>

@@ -79,7 +79,9 @@
       "Bash(./vendor/bin/sail npm install:*)",
       "Bash(alias sail='./vendor/bin/sail')",
       "Bash(./vendor/bin/sail artisan view:clear)",
-      "Bash(./vendor/bin/sail artisan migrate:fresh --seed)"
+      "Bash(./vendor/bin/sail artisan migrate:fresh --seed)",
+      "Bash(./vendor/bin/sail artisan make:livewire Admin/Options/OptionIndex)",
+      "Bash(./vendor/bin/sail artisan make:livewire:*)"
     ],
     "deny": [
       "Bash(sudo:*)",

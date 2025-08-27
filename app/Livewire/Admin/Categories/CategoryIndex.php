@@ -124,6 +124,11 @@ class CategoryIndex extends Component
         $this->editingSortOrder = '';
     }
 
+    public function viewProducts($categoryId)
+    {
+        return redirect()->route('admin.products.index', ['category' => $categoryId]);
+    }
+
     public function toggleActive($categoryId)
     {
         $category = Category::find($categoryId);

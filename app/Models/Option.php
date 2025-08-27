@@ -41,6 +41,12 @@ class Option extends Model
         return $this->hasMany(OptionDetail::class)->orderBy('sort_order');
     }
 
+    // エイリアス（snake_caseアクセス用）
+    public function option_details()
+    {
+        return $this->optionDetails();
+    }
+
     // スコープ
     public function scopeByStore($query, $storeId)
     {
@@ -70,5 +76,16 @@ class Option extends Model
         }
 
         return $this->title;
+    }
+
+    // 下位互換性のため（新しいコードでnameを使えるように）
+    public function getNameAttribute()
+    {
+        return $this->title;
+    }
+
+    public function getIsRequiredAttribute()
+    {
+        return $this->required;
     }
 }

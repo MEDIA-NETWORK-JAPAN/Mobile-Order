@@ -15,7 +15,22 @@
 
     {{-- ヘッダー --}}
     <div class="flex justify-between items-center m-6">
-        <h2 class="text-2xl font-bold">商品管理</h2>
+        <div>
+            <h2 class="text-2xl font-bold">商品管理</h2>
+            @if($selectedCategory)
+                @php
+                    $category = App\Models\Category::find($selectedCategory);
+                @endphp
+                @if($category)
+                    <p class="text-sm text-gray-600 mt-1">
+                        カテゴリ「{{ $category->name }}」でフィルター中
+                        <button wire:click="$set('selectedCategory', '')" class="ml-2 text-blue-600 hover:text-blue-800 underline">
+                            クリア
+                        </button>
+                    </p>
+                @endif
+            @endif
+        </div>
         @if($canEdit)
             <a href="{{ route('admin.products.create') }}" wire:navigate>
                 <button class="px-4 py-2 font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">

@@ -38,6 +38,11 @@ class ProductIndex extends Component
         if (! $user->isSuperAdmin() && $user->store_id) {
             $this->selectedStore = $user->store_id;
         }
+
+        // URLパラメータからカテゴリIDを取得
+        if (request()->has('category')) {
+            $this->selectedCategory = request()->get('category');
+        }
     }
 
     public function updatedSearch()

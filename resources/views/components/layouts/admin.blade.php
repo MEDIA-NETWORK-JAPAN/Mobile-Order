@@ -15,6 +15,10 @@
            class="nav-link {{ request()->routeIs('admin.categories.*') ? 'active' : '' }}">
             カテゴリ管理
         </a>
+        <a href="{{ route('admin.options.index') }}" 
+           class="nav-link {{ request()->routeIs('admin.options.*') ? 'active' : '' }}">
+            オプション管理
+        </a>
         <a href="{{ route('admin.orders.index') }}" 
            class="nav-link {{ request()->routeIs('admin.orders.*') ? 'active' : '' }}">
             注文管理
@@ -46,6 +50,10 @@
                         <a href="{{ route('admin.categories.index') }}" 
                            class="sidebar-sublink {{ request()->routeIs('admin.categories.*') ? 'active' : '' }}">
                             カテゴリ管理
+                        </a>
+                        <a href="{{ route('admin.options.index') }}" 
+                           class="sidebar-sublink {{ request()->routeIs('admin.options.*') ? 'active' : '' }}">
+                            オプション管理
                         </a>
                     </div>
 
@@ -140,6 +148,11 @@
                        class="sidebar-sublink {{ request()->routeIs('admin.categories.*') ? 'active' : '' }}"
                        @click="mobileSidebarOpen = false">
                         カテゴリ管理
+                    </a>
+                    <a href="{{ route('admin.options.index') }}" 
+                       class="sidebar-sublink {{ request()->routeIs('admin.options.*') ? 'active' : '' }}"
+                       @click="mobileSidebarOpen = false">
+                        オプション管理
                     </a>
                 </div>
 
