@@ -13,6 +13,7 @@
         </x-mary-alert>
     @endif
 
+
     {{-- ヘッダー --}}
     <div class="flex justify-between items-center m-6">
         <div>
@@ -32,7 +33,7 @@
             @endif
         </div>
         @if($canEdit)
-            <a href="{{ route('admin.products.create') }}" wire:navigate>
+            <a href="{{ route('admin.products.create') }}">
                 <button class="px-4 py-2 font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">
                     新規商品追加
                 </button>
@@ -41,11 +42,12 @@
     </div>
 
     {{-- フィルター --}}
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6" wire:key="filters-{{ now()->timestamp }}">
         <x-mary-input
             wire:model.live="search"
             placeholder="商品名・コードで検索..."
             type="search"
+            wire:key="search-input"
         />
 
         @if($stores->count() > 0)
@@ -55,6 +57,7 @@
                 option-label="name"
                 option-value="id"
                 placeholder="店舗を選択"
+                wire:key="store-select-{{ $selectedStore }}"
             />
         @endif
 
@@ -64,6 +67,7 @@
             option-label="name"
             option-value="id"
             placeholder="カテゴリを選択"
+            wire:key="category-select-{{ $selectedCategory }}"
         />
 
         <x-mary-select
@@ -77,7 +81,22 @@
             option-label="label"
             option-value="value"
             placeholder="在庫状態"
+            wire:key="availability-select-{{ $availabilityFilter }}"
         />
+    </div>
+
+    {{-- フィルタクリアボタン --}}
+    <div class="mb-6 flex justify-end">
+        <button 
+            wire:click="clearFilters" 
+            class="btn btn-outline btn-sm"
+            {{ (!$search && !$selectedCategory && !$availabilityFilter && (!auth()->user()->isSuperAdmin() || !$selectedStore)) ? 'disabled' : '' }}
+        >
+            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+            フィルタをクリア
+        </button>
     </div>
 
     {{-- テーブル --}}
@@ -147,18 +166,19 @@
                         </td>
                         <td>
                             @if($canEdit)
-                                <a href="{{ route('admin.products.edit', $product) }}" wire:navigate>
+                                <a href="{{ route('admin.products.edit', $product) }}">
                                     <button class="px-3 py-1 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors mr-2">
                                         編集
                                     </button>
                                 </a>
                                 <button wire:click="deleteProduct({{ $product->id }})"
-                                        class="px-3 py-1 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-md transition-colors"
-                                        onclick="return confirm('本当にこの商品を削除しますか？')">
+                                        wire:confirm="本当にこの商品を削除しますか？"
+                                        wire:key="delete-btn-{{ $product->id }}"
+                                        class="px-3 py-1 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-md transition-colors">
                                     削除
                                 </button>
                             @else
-                                <a href="{{ route('admin.products.edit', $product) }}" wire:navigate>
+                                <a href="{{ route('admin.products.edit', $product) }}">
                                     <button class="px-3 py-1 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors">
                                         詳細
                                     </button>

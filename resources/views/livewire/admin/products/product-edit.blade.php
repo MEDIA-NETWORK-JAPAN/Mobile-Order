@@ -2,26 +2,45 @@
     {{-- 権限別メッセージ表示 --}}
     @if($canEdit)
         <x-mary-alert type="warning" dismissible="false">
-            <strong>SuperAdmin緊急作成モード</strong><br>
+            <strong>SuperAdmin緊急編集モード</strong><br>
             商品マスターデータは通常POS側で管理されています。<br>
-            緊急作成後は必ずPOS側のデータを手動で同期してください。
+            緊急編集後は必ずPOS側のデータを手動で同期してください。
         </x-mary-alert>
     @else
-        <x-mary-alert type="error" dismissible="false">
-            <strong>権限不足</strong><br>
-            商品データはPOS側で管理されています。作成はできません。<br>
-            緊急作成にはSuperAdmin権限が必要です。SuperAdminでログインしてください。
+        <x-mary-alert type="info" dismissible="false">
+            商品データはPOS側で管理されています。編集はできません。<br>
+            編集が必要な場合は、POS端末から操作してください。
         </x-mary-alert>
     @endif
 
     {{-- ヘッダー --}}
-    <div class="mb-6">
-        <h2 class="text-2xl font-bold">新規商品追加</h2>
-        
+    <div class="mb-6 flex justify-between items-center">
+        <h2 class="text-2xl font-bold">商品編集</h2>
+        <div class="space-x-2">
+            <button
+                type="button"
+                wire:click="backToIndex"
+                class="btn btn-outline"
+            >
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                </svg>
+                商品一覧に戻る
+            </button>
+            @if($canEdit)
+                <x-mary-button
+                    label="削除"
+                    icon="c-trash"
+                    wire:click="delete"
+                    wire:confirm="この商品を削除してもよろしいですか？"
+                    class="btn-error"
+                />
+            @endif
+        </div>
     </div>
 
     {{-- フォーム --}}
-    <form wire:submit="save">
+    <form wire:submit.prevent="update">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             {{-- 基本情報 --}}
             <div class="card bg-base-100 shadow-xl p-6">
@@ -56,10 +75,10 @@
                 />
 
                 <x-mary-textarea
-                    label="説明"
+                    label="商品説明"
                     wire:model="description"
                     rows="3"
-                    placeholder="商品の説明を入力"
+                    placeholder="商品の詳細説明"
                     :disabled="!$canEdit"
                 />
             </div>
@@ -77,21 +96,6 @@
                     :disabled="!$canEdit"
                 />
 
-                <x-mary-select
-                    label="税区分"
-                    wire:model.lazy="tax_type"
-                    :options="[
-                        ['value' => 'standard', 'label' => '標準税率'],
-                        ['value' => 'reduced', 'label' => '軽減税率'],
-                        ['value' => 'exempt', 'label' => '非課税'],
-                        ['value' => 'non_taxable', 'label' => '不課税']
-                    ]"
-                    option-label="label"
-                    option-value="value"
-                    required
-                    :disabled="!$canEdit"
-                />
-
                 <x-mary-input
                     label="税込価格"
                     value="{{ $taxInPrice ? '¥' . number_format($taxInPrice) : '自動計算' }}"
@@ -104,6 +108,21 @@
                     wire:model="cost"
                     type="number"
                     placeholder="500"
+                    :disabled="!$canEdit"
+                />
+
+                <x-mary-select
+                    label="税区分"
+                    wire:model.lazy="tax_type"
+                    :options="[
+                        ['value' => 'standard', 'label' => '標準税率'],
+                        ['value' => 'reduced', 'label' => '軽減税率'],
+                        ['value' => 'exempt', 'label' => '非課税'],
+                        ['value' => 'non_taxable', 'label' => '不課税']
+                    ]"
+                    option-label="label"
+                    option-value="value"
+                    required
                     :disabled="!$canEdit"
                 />
             </div>
@@ -145,18 +164,17 @@
                     label="表示順"
                     wire:model="sort_order"
                     type="number"
-                    required
                     min="0"
-                    placeholder="0"
+                    required
                     :disabled="!$canEdit"
                 />
 
                 <div class="form-control">
                     <label class="label cursor-pointer">
                         <span class="label-text">有効</span>
-                        <input 
-                            type="checkbox" 
-                            wire:model="is_active" 
+                        <input
+                            type="checkbox"
+                            wire:model="is_active"
                             class="checkbox"
                             {{ $is_active ? 'checked' : '' }}
                             {{ !$canEdit ? 'disabled' : '' }}
@@ -199,7 +217,7 @@
                     <div class="mb-4">
                         <img
                             src="{{ $image_url }}"
-                            alt="商品画像プレビュー"
+                            alt="{{ $product->name }}"
                             class="w-full max-w-xs h-48 object-cover rounded-lg shadow-md mx-auto"
                             onerror="this.src='https://via.placeholder.com/300x200?text=画像なし'; this.onerror=null;"
                         />
@@ -241,21 +259,21 @@
                     class="btn btn-primary btn-lg"
                     wire:loading.attr="disabled"
                 >
-                    商品を作成
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                    商品を更新
+                    <span wire:loading wire:target="update" class="loading loading-spinner loading-sm ml-2"></span>
                 </button>
-            @else
-                <div class="text-red-500">
-                    編集権限がありません（canEdit: {{ $canEdit ? 'true' : 'false' }}）
-                </div>
             @endif
         </div>
 
         {{-- ローディング表示 --}}
-        <div wire:loading wire:target="save" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div wire:loading wire:target="update" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div class="bg-base-100 p-6 rounded-lg shadow-xl">
                 <div class="flex items-center space-x-3">
                     <span class="loading loading-spinner loading-lg"></span>
-                    <span class="text-lg">作成中...</span>
+                    <span class="text-lg">更新中...</span>
                 </div>
             </div>
         </div>

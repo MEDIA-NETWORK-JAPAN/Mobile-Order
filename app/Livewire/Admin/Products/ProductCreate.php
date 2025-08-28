@@ -57,10 +57,10 @@ class ProductCreate extends Component
         'tax_type' => 'required|in:standard,reduced,exempt,non_taxable',
         'availability_status' => 'required|in:available,sold_out,not_arrived,preparing',
         'availability_message' => 'nullable|max:255',
-        'expected_available_time' => 'nullable|date_format:H:i',
+        'expected_available_time' => 'nullable',
         'image_url' => 'nullable|max:500|url',
         'sort_order' => 'required|integer|min:0',
-        'is_active' => 'required|boolean',
+        'is_active' => 'boolean',
         'selectedCategories' => 'array',
         'selectedCategories.*' => 'exists:categories,id',
         // 'photo' => 'nullable|image|max:2048',
@@ -70,7 +70,14 @@ class ProductCreate extends Component
     {
         $user = auth()->user();
 
-        \Log::info('ProductCreate mount() called', ['user_role' => $user->role]);
+
+        // 必須フィールドの初期値設定
+        $this->tax_type = 'standard';
+        $this->availability_status = 'available';
+        $this->sort_order = 0;
+        $this->is_active = true;
+        $this->selectedCategories = [];
+        $this->expected_available_time = '';
 
         if (! $user->isSuperAdmin()) {
             $this->store_id = $user->store_id;
@@ -79,24 +86,10 @@ class ProductCreate extends Component
             $firstStore = \App\Models\Store::active()->first();
             if ($firstStore) {
                 $this->store_id = $firstStore->id;
-                \Log::info('ProductCreate: store_id set to', ['store_id' => $this->store_id]);
             }
         }
     }
 
-    public function testMethod()
-    {
-        \Log::info('ProductCreate testMethod() called - JavaScript is working!');
-        $this->dispatchBrowserEvent('alert', ['message' => 'JavaScript通信テスト成功！']);
-    }
-
-    public function create()
-    {
-        \Log::info('ProductCreate create() method called - this should be save() instead!');
-
-        // saveメソッドを呼び出す
-        return $this->save();
-    }
 
     public function updatedPrice()
     {
@@ -125,38 +118,15 @@ class ProductCreate extends Component
 
     public function save()
     {
-        \Log::info('=== ProductCreate save() method START ===');
-
         $user = auth()->user();
-
-        // デバッグ用ログ出力
-        \Log::info('ProductCreate save() called', [
-            'user_role' => $user->role,
-            'user_id' => $user->id,
-            'store_id' => $this->store_id,
-            'code' => $this->code,
-            'name' => $this->name,
-            'price' => $this->price,
-            'availability_status' => $this->availability_status,
-            'sort_order' => $this->sort_order,
-            'is_active' => $this->is_active,
-        ]);
 
         // SuperAdmin権限チェック（緊急編集機能）
         if (! $user->isSuperAdmin()) {
-            \Log::warning('ProductCreate: Non-SuperAdmin attempted to create product', ['user_id' => $user->id]);
             $this->addError('permission', '商品の作成権限がありません。商品マスターデータはPOS側で管理されています。緊急作成にはSuperAdmin権限が必要です。');
-
             return;
         }
 
-        try {
-            $this->validate();
-            \Log::info('ProductCreate: Validation passed');
-        } catch (\Exception $e) {
-            \Log::error('ProductCreate: Validation failed', ['error' => $e->getMessage()]);
-            throw $e;
-        }
+        $this->validate();
 
         // 税込価格計算
         $taxInPrice = $this->calculateTaxInPrice();
@@ -191,10 +161,28 @@ class ProductCreate extends Component
             $product->categories()->sync($this->selectedCategories);
         }
 
-        \Log::info('ProductCreate: Product created successfully', ['product_id' => $product->id]);
 
-        $this->success('商品を作成しました。');
+        // フォームをリセット
+        $this->reset([
+            'code', 'name', 'description', 'price', 'cost',
+            'availability_message', 'expected_available_time', 'image_url', 'selectedCategories'
+        ]);
 
+        // 初期値を再設定
+        $this->tax_type = 'standard';
+        $this->availability_status = 'available';
+        $this->sort_order = 0;
+        $this->is_active = true;
+        $this->selectedCategories = [];
+        $this->expected_available_time = '';
+
+        session()->flash('success', '商品を作成しました。');
+        
+        return $this->redirectRoute('admin.products.index');
+    }
+
+    public function backToIndex()
+    {
         return $this->redirectRoute('admin.products.index');
     }
 

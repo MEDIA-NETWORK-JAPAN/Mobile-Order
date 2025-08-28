@@ -43,6 +43,15 @@ class ProductIndex extends Component
         if (request()->has('category')) {
             $this->selectedCategory = request()->get('category');
         }
+
+        // セッションフラッシュメッセージをToast形式で表示
+        if (session('success')) {
+            $this->success(session('success'));
+        }
+
+        if (session('error')) {
+            $this->error(session('error'));
+        }
     }
 
     public function updatedSearch()
@@ -52,7 +61,17 @@ class ProductIndex extends Component
 
     public function updatedSelectedStore()
     {
-        $this->selectedCategory = '';
+        // 選択したカテゴリが新しい店舗に存在するかチェック
+        if ($this->selectedCategory && $this->selectedStore) {
+            $categoryExists = Category::where('id', $this->selectedCategory)
+                ->where('store_id', $this->selectedStore)
+                ->exists();
+
+            if (!$categoryExists) {
+                $this->selectedCategory = '';
+            }
+        }
+
         $this->resetPage();
     }
 
@@ -74,6 +93,27 @@ class ProductIndex extends Component
             $this->sortField = $field;
             $this->sortDirection = 'asc';
         }
+
+        $this->resetPage();
+    }
+
+    public function clearFilters()
+    {
+        // 権限に応じて保持すべき値を記憶
+        $user = auth()->user();
+        $keepStore = !$user->isSuperAdmin() ? $this->selectedStore : '';
+
+        // 全フィルタプロパティをリセット
+        $this->reset(['search', 'selectedStore', 'selectedCategory', 'availabilityFilter', 'sortField', 'sortDirection']);
+
+        // 必要な値を再設定
+        if (!$user->isSuperAdmin()) {
+            $this->selectedStore = $keepStore;
+        }
+
+        $this->sortField = 'name';
+        $this->sortDirection = 'asc';
+        $this->resetPage();
     }
 
     public function deleteProduct($productId)
@@ -95,7 +135,11 @@ class ProductIndex extends Component
         }
 
         $product->delete();
-        $this->success('商品を削除しました。');
+
+        $this->error('商品を削除しました。'); // 赤色トーストで直接表示
+
+        // フィルタ状態を保持しつつページをリセット
+        $this->resetPage();
     }
 
     public function render()
@@ -104,17 +148,17 @@ class ProductIndex extends Component
 
         // 商品クエリ
         $productsQuery = Product::with(['store', 'categories'])
-            ->when($this->search, fn ($query) => $query->where('name', 'like', "%{$this->search}%")
-                ->orWhere('code', 'like', "%{$this->search}%")
-            )
-            ->when($this->selectedStore, fn ($query) => $query->where('store_id', $this->selectedStore)
-            )
-            ->when($this->selectedCategory, fn ($query) => $query->whereHas('categories', fn ($q) => $q->where('categories.id', $this->selectedCategory))
-            )
-            ->when($this->availabilityFilter, fn ($query) => $query->where('availability_status', $this->availabilityFilter)
-            )
-            ->when(! $user->isSuperAdmin(), fn ($query) => $query->where('store_id', $user->store_id)
-            )
+            ->when(!empty($this->search), function ($query) {
+                $search = trim($this->search);
+                return $query->where(function ($q) use ($search) {
+                    $q->where('name', 'like', "%{$search}%")
+                      ->orWhere('code', 'like', "%{$search}%");
+                });
+            })
+            ->when(!empty($this->selectedStore), fn ($query) => $query->where('store_id', $this->selectedStore))
+            ->when(!empty($this->selectedCategory), fn ($query) => $query->whereHas('categories', fn ($q) => $q->where('categories.id', $this->selectedCategory)))
+            ->when(!empty($this->availabilityFilter), fn ($query) => $query->where('availability_status', $this->availabilityFilter))
+            ->when(!$user->isSuperAdmin(), fn ($query) => $query->where('store_id', $user->store_id))
             ->orderBy($this->sortField, $this->sortDirection);
 
         $products = $productsQuery->paginate(10);

@@ -35,13 +35,10 @@ Route::middleware('auth')->group(function () {
 Route::middleware(['auth', 'verified'])->prefix(config('app.admin_prefix'))->name('admin.')->group(function () {
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
-    // Products
+    // Products - Livewire実装（設計書準拠）
     Route::get('/products', App\Livewire\Admin\Products\ProductIndex::class)->name('products.index');
-    Route::get('/products/create', [App\Http\Controllers\Admin\ProductController::class, 'create'])->name('products.create');
-    Route::post('/products', [App\Http\Controllers\Admin\ProductController::class, 'store'])->name('products.store');
-    Route::get('/products/{product}/edit', [App\Http\Controllers\Admin\ProductController::class, 'edit'])->name('products.edit');
-    Route::put('/products/{product}', [App\Http\Controllers\Admin\ProductController::class, 'update'])->name('products.update');
-    Route::delete('/products/{product}', [App\Http\Controllers\Admin\ProductController::class, 'destroy'])->name('products.destroy');
+    Route::get('/products/create', App\Livewire\Admin\Products\ProductCreate::class)->name('products.create');
+    Route::get('/products/{product}/edit', App\Livewire\Admin\Products\ProductEdit::class)->name('products.edit');
 
     // Categories
     Route::get('/categories', App\Livewire\Admin\Categories\CategoryIndex::class)->name('categories.index');
