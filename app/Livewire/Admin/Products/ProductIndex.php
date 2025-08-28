@@ -134,6 +134,9 @@ class ProductIndex extends Component
             return;
         }
 
+        // 商品コードに削除プレフィックスを付与してから削除（コード再利用を可能にするため）
+        $deletedCode = 'DELETED_' . time() . '_' . $product->code;
+        $product->update(['code' => $deletedCode]);
         $product->delete();
 
         $this->error('商品を削除しました。'); // 赤色トーストで直接表示

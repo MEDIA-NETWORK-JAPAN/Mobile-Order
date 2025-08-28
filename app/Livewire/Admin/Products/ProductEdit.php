@@ -210,6 +210,9 @@ class ProductEdit extends Component
             return $this->redirectRoute('admin.products.index');
         }
 
+        // 商品コードに削除プレフィックスを付与してから削除（コード再利用を可能にするため）
+        $deletedCode = 'DELETED_' . time() . '_' . $this->product->code;
+        $this->product->update(['code' => $deletedCode]);
         $this->product->delete();
 
         session()->flash('error', '商品を削除しました。');
