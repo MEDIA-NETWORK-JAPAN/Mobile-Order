@@ -24,7 +24,7 @@
     </div>
 
     {{-- フィルター --}}
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <x-mary-input
             wire:model.live="search"
             placeholder="カテゴリ名で検索..."
@@ -38,9 +38,42 @@
                 option-label="name"
                 option-value="id"
                 placeholder="店舗を選択"
+                wire:key="store-select-{{ $selectedStore }}"
             />
         @endif
+
+        <x-mary-select
+            wire:model.live="statusFilter"
+            :options="[
+                ['value' => 'active', 'label' => '有効のみ'],
+                ['value' => 'inactive', 'label' => '無効のみ']
+            ]"
+            option-label="label"
+            option-value="value"
+            placeholder="状態で絞り込み"
+            wire:key="status-select-{{ $statusFilter }}"
+        />
+
+        <x-mary-button 
+            wire:click="clearFilters" 
+            class="btn-outline"
+            icon="o-x-mark"
+        >
+            フィルタクリア
+        </x-mary-button>
     </div>
+
+    {{-- 並び替え説明 --}}
+    @if($canEdit && $categories->count() > 0)
+        <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div class="flex items-center text-blue-800 text-sm">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                ↑↓ボタンで表示順を変更できます
+            </div>
+        </div>
+    @endif
 
     {{-- テーブル --}}
     <div class="overflow-x-auto">
@@ -68,80 +101,77 @@
             <tbody>
                 @forelse($categories as $category)
                     <tr>
-                        @if($editingCategory === $category->id)
-                            {{-- インライン編集モード --}}
-                            <td>
-                                <x-mary-input
-                                    wire:model="editingSortOrder"
-                                    type="number"
-                                    size="sm"
-                                    class="w-20"
-                                />
-                            </td>
-                            <td>
-                                <x-mary-input
-                                    wire:model="editingName"
-                                    size="sm"
-                                />
-                            </td>
-                            <td>{{ $category->store->name }}</td>
-                            <td>
-                                <button wire:click="viewProducts({{ $category->id }})" class="text-blue-600 hover:text-blue-800 underline">
-                                    {{ $category->products_count }}件
-                                </button>
-                            </td>
-                            <td>
-                                @if($category->is_active)
-                                    <span class="inline-block px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">有効</span>
-                                @else
-                                    <span class="inline-block px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">無効</span>
-                                @endif
-                            </td>
-                            <td>
-                                <button wire:click="updateCategory" class="px-3 py-1 text-sm font-medium text-green-600 bg-green-50 hover:bg-green-100 rounded-md transition-colors mr-2">
-                                    保存
-                                </button>
-                                <button wire:click="cancelEdit" class="px-3 py-1 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors">
-                                    キャンセル
-                                </button>
-                            </td>
-                        @else
-                            {{-- 通常表示モード --}}
-                            <td>{{ $category->sort_order }}</td>
-                            <td>{{ $category->name }}</td>
-                            <td>{{ $category->store->name }}</td>
-                            <td>
-                                <button wire:click="viewProducts({{ $category->id }})" class="text-blue-600 hover:text-blue-800 underline">
-                                    {{ $category->products_count }}件
-                                </button>
-                            </td>
-                            <td>
-                                @if($category->is_active)
-                                    <span class="inline-block px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">有効</span>
-                                @else
-                                    <span class="inline-block px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">無効</span>
-                                @endif
-                            </td>
-                            <td>
-                                @if($canEdit)
-                                    <button wire:click="editCategory({{ $category->id }})" class="px-3 py-1 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors mr-2">
-                                        編集
-                                    </button>
-                                    <button wire:click="toggleActive({{ $category->id }})" class="px-3 py-1 text-sm font-medium text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-md transition-colors mr-2">
-                                        @if($category->is_active) 無効化 @else 有効化 @endif
-                                    </button>
-                                    @if($category->products_count === 0)
-                                        <button wire:click="deleteCategory({{ $category->id }})" class="px-3 py-1 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-md transition-colors">
-                                            削除
-                                        </button>
-                                    @endif
-                                @else
-                                    <button wire:click="view({{ $category->id }})" class="px-3 py-1 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors">
-                                        詳細
-                                    </button>
-                                @endif
-                            </td>
-                        @endif
+                        <td>
+                            @if($canEdit)
+                                <div class="flex items-center space-x-2">
+                                    <x-mary-button 
+                                        wire:click="moveCategoryUp({{ $category->id }})"
+                                        size="sm"
+                                        class="btn-sm btn-ghost"
+                                        wire:loading.attr="disabled"
+                                    >
+                                        ↑
+                                    </x-mary-button>
+                                    <span>{{ $category->sort_order }}</span>
+                                    <x-mary-button 
+                                        wire:click="moveCategoryDown({{ $category->id }})"
+                                        size="sm" 
+                                        class="btn-sm btn-ghost"
+                                        wire:loading.attr="disabled"
+                                    >
+                                        ↓
+                                    </x-mary-button>
+                                </div>
+                            @else
+                                {{ $category->sort_order }}
+                            @endif
+                        </td>
+                        <td>{{ $category->name }}</td>
+                        <td>{{ $category->store->name }}</td>
+                        <td>
+                            <span class="text-gray-700">{{ $category->products_count }}件</span>
+                        </td>
+                        <td>
+                            @if($category->is_active)
+                                <span class="inline-block px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">有効</span>
+                            @else
+                                <span class="inline-block px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">無効</span>
+                            @endif
+                        </td>
+                        <td>
+                            @if($canEdit)
+                                <x-mary-button 
+                                    wire:click="editCategory({{ $category->id }})" 
+                                    size="sm" 
+                                    class="btn-primary btn-sm mr-2"
+                                >
+                                    編集
+                                </x-mary-button>
+                                <x-mary-button 
+                                    wire:click="toggleActive({{ $category->id }})" 
+                                    size="sm" 
+                                    class="btn-warning btn-sm mr-2"
+                                >
+                                    @if($category->is_active) 無効化 @else 有効化 @endif
+                                </x-mary-button>
+                                <x-mary-button 
+                                    wire:click="deleteCategory({{ $category->id }})" 
+                                    wire:confirm="このカテゴリを削除してもよろしいですか？"
+                                    size="sm" 
+                                    class="btn-error btn-sm"
+                                >
+                                    削除
+                                </x-mary-button>
+                            @else
+                                <x-mary-button 
+                                    wire:click="editCategory({{ $category->id }})" 
+                                    size="sm" 
+                                    class="btn-info btn-sm"
+                                >
+                                    詳細
+                                </x-mary-button>
+                            @endif
+                        </td>
                     </tr>
                 @empty
                     <tr>
@@ -153,6 +183,7 @@
             </tbody>
         </table>
     </div>
+
 
     {{-- ページネーション --}}
     <div class="mt-4">

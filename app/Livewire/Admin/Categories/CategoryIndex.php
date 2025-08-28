@@ -16,6 +16,8 @@ class CategoryIndex extends Component
 
     public $selectedStore = '';
 
+    public $statusFilter = '';
+
     public $sortField = 'sort_order';
 
     public $sortDirection = 'asc';
@@ -23,12 +25,6 @@ class CategoryIndex extends Component
     // 権限制御
     public $canEdit = false;
 
-    // Inline editing
-    public $editingCategory = null;
-
-    public $editingName = '';
-
-    public $editingSortOrder = '';
 
     public function mount()
     {
@@ -37,8 +33,20 @@ class CategoryIndex extends Component
         // SuperAdminのみ編集可能（POS中心設計）
         $this->canEdit = $user->isSuperAdmin();
 
-        if (! $user->isSuperAdmin() && $user->store_id) {
+        // URLパラメータまたはユーザーの店舗IDから店舗フィルタを設定
+        if (request()->has('store')) {
+            $this->selectedStore = request()->get('store');
+        } elseif (! $user->isSuperAdmin() && $user->store_id) {
             $this->selectedStore = $user->store_id;
+        }
+
+        // セッションフラッシュメッセージをToast形式で表示
+        if (session('success')) {
+            $this->success(session('success'));
+        }
+
+        if (session('error')) {
+            $this->error(session('error'));
         }
     }
 
@@ -48,6 +56,11 @@ class CategoryIndex extends Component
     }
 
     public function updatedSelectedStore()
+    {
+        $this->resetPage();
+    }
+
+    public function updatedStatusFilter()
     {
         $this->resetPage();
     }
@@ -62,72 +75,114 @@ class CategoryIndex extends Component
         }
     }
 
+    public function clearFilters()
+    {
+        // 権限に応じて保持すべき値を記憶
+        $user = auth()->user();
+        
+        // クエリパラメータを構築
+        $params = [];
+        if (!$user->isSuperAdmin() && $user->store_id) {
+            $params['store'] = $user->store_id;
+        }
+        
+        // ページリダイレクトでフィルタクリア
+        return redirect()->route('admin.categories.index', $params);
+    }
+
     public function editCategory($categoryId)
     {
+        return redirect()->route('admin.categories.edit', $categoryId);
+    }
+
+    public function moveCategoryUp($categoryId)
+    {
+        $user = auth()->user();
+
+        // SuperAdmin権限チェック
+        if (!$user->isSuperAdmin()) {
+            $this->error('並び替え権限がありません。カテゴリマスターデータはPOS側で管理されています。');
+            return;
+        }
+
         $category = Category::find($categoryId);
-
-        if (! $category) {
+        if (!$category) {
             $this->error('カテゴリが見つかりません。');
-
             return;
         }
 
         // 権限チェック
+        if (!$user->hasStoreAccess($category->store_id)) {
+            $this->error('このカテゴリを操作する権限がありません。');
+            return;
+        }
+
+        // 一つ上のカテゴリを取得
+        $upperCategory = Category::where('store_id', $category->store_id)
+            ->where('sort_order', '<', $category->sort_order)
+            ->orderBy('sort_order', 'desc')
+            ->first();
+
+        if ($upperCategory) {
+            // DB トランザクションで順序を入れ替え
+            \DB::transaction(function () use ($category, $upperCategory) {
+                $tempOrder = $category->sort_order;
+                $category->update(['sort_order' => $upperCategory->sort_order]);
+                $upperCategory->update(['sort_order' => $tempOrder]);
+            });
+
+            // 並び替え後はページ全体をリロードして確実に状態をリセット
+            return redirect()->route('admin.categories.index')
+                ->with('success', '並び順を更新しました。');
+        } else {
+            $this->error('これ以上上に移動できません。');
+        }
+    }
+
+    public function moveCategoryDown($categoryId)
+    {
         $user = auth()->user();
 
-        // SuperAdmin権限チェック（緊急編集機能）
-        if (! $user->isSuperAdmin()) {
-            $this->error('カテゴリの編集権限がありません。カテゴリマスターデータはPOS側で管理されています。');
-
+        // SuperAdmin権限チェック
+        if (!$user->isSuperAdmin()) {
+            $this->error('並び替え権限がありません。カテゴリマスターデータはPOS側で管理されています。');
             return;
         }
 
-        if (! $user->hasStoreAccess($category->store_id)) {
-            $this->error('このカテゴリを編集する権限がありません。');
-
-            return;
-        }
-
-        $this->editingCategory = $categoryId;
-        $this->editingName = $category->name;
-        $this->editingSortOrder = $category->sort_order;
-    }
-
-    public function updateCategory()
-    {
-        $this->validate([
-            'editingName' => 'required|max:255',
-            'editingSortOrder' => 'required|integer|min:0',
-        ]);
-
-        $category = Category::find($this->editingCategory);
-
-        if (! $category) {
+        $category = Category::find($categoryId);
+        if (!$category) {
             $this->error('カテゴリが見つかりません。');
-
             return;
         }
 
-        $category->update([
-            'name' => $this->editingName,
-            'sort_order' => (int) $this->editingSortOrder,
-        ]);
+        // 権限チェック
+        if (!$user->hasStoreAccess($category->store_id)) {
+            $this->error('このカテゴリを操作する権限がありません。');
+            return;
+        }
 
-        $this->success('カテゴリを更新しました。');
-        $this->cancelEdit();
+        // 一つ下のカテゴリを取得
+        $lowerCategory = Category::where('store_id', $category->store_id)
+            ->where('sort_order', '>', $category->sort_order)
+            ->orderBy('sort_order', 'asc')
+            ->first();
+
+        if ($lowerCategory) {
+            // DB トランザクションで順序を入れ替え
+            \DB::transaction(function () use ($category, $lowerCategory) {
+                $tempOrder = $category->sort_order;
+                $category->update(['sort_order' => $lowerCategory->sort_order]);
+                $lowerCategory->update(['sort_order' => $tempOrder]);
+            });
+
+            // 並び替え後はページ全体をリロードして確実に状態をリセット
+            return redirect()->route('admin.categories.index')
+                ->with('success', '並び順を更新しました。');
+        } else {
+            $this->error('これ以上下に移動できません。');
+        }
     }
 
-    public function cancelEdit()
-    {
-        $this->editingCategory = null;
-        $this->editingName = '';
-        $this->editingSortOrder = '';
-    }
-
-    public function viewProducts($categoryId)
-    {
-        return redirect()->route('admin.products.index', ['category' => $categoryId]);
-    }
 
     public function toggleActive($categoryId)
     {
@@ -209,6 +264,8 @@ class CategoryIndex extends Component
             )
             ->when($this->selectedStore, fn ($query) => $query->where('store_id', $this->selectedStore)
             )
+            ->when($this->statusFilter === 'active', fn ($query) => $query->where('is_active', true))
+            ->when($this->statusFilter === 'inactive', fn ($query) => $query->where('is_active', false))
             ->when(! $user->isSuperAdmin(), fn ($query) => $query->where('store_id', $user->store_id)
             )
             ->orderBy($this->sortField, $this->sortDirection);

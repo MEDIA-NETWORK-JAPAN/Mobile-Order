@@ -35,7 +35,10 @@ class ProductIndex extends Component
         // SuperAdminのみ編集可能（POS中心設計）
         $this->canEdit = $user->isSuperAdmin();
 
-        if (! $user->isSuperAdmin() && $user->store_id) {
+        // URLパラメータまたはユーザーの店舗IDから店舗フィルタを設定
+        if (request()->has('store')) {
+            $this->selectedStore = request()->get('store');
+        } elseif (! $user->isSuperAdmin() && $user->store_id) {
             $this->selectedStore = $user->store_id;
         }
 
@@ -101,19 +104,15 @@ class ProductIndex extends Component
     {
         // 権限に応じて保持すべき値を記憶
         $user = auth()->user();
-        $keepStore = !$user->isSuperAdmin() ? $this->selectedStore : '';
-
-        // 全フィルタプロパティをリセット
-        $this->reset(['search', 'selectedStore', 'selectedCategory', 'availabilityFilter', 'sortField', 'sortDirection']);
-
-        // 必要な値を再設定
-        if (!$user->isSuperAdmin()) {
-            $this->selectedStore = $keepStore;
+        
+        // クエリパラメータを構築
+        $params = [];
+        if (!$user->isSuperAdmin() && $user->store_id) {
+            $params['store'] = $user->store_id;
         }
-
-        $this->sortField = 'name';
-        $this->sortDirection = 'asc';
-        $this->resetPage();
+        
+        // ページリダイレクトでフィルタクリア
+        return redirect()->route('admin.products.index', $params);
     }
 
     public function deleteProduct($productId)

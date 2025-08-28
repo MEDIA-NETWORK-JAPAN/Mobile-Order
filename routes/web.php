@@ -43,6 +43,7 @@ Route::middleware(['auth', 'verified'])->prefix(config('app.admin_prefix'))->nam
     // Categories
     Route::get('/categories', App\Livewire\Admin\Categories\CategoryIndex::class)->name('categories.index');
     Route::get('/categories/create', App\Livewire\Admin\Categories\CategoryCreate::class)->name('categories.create');
+    Route::get('/categories/{category}/edit', App\Livewire\Admin\Categories\CategoryEdit::class)->name('categories.edit');
 
     // Options
     Route::get('/options', App\Livewire\Admin\Options\OptionIndex::class)->name('options.index');

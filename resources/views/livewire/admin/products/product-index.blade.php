@@ -42,12 +42,11 @@
     </div>
 
     {{-- フィルター --}}
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6" wire:key="filters-{{ now()->timestamp }}">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <x-mary-input
             wire:model.live="search"
             placeholder="商品名・コードで検索..."
             type="search"
-            wire:key="search-input"
         />
 
         @if($stores->count() > 0)
