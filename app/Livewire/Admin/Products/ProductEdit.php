@@ -3,16 +3,18 @@
 namespace App\Livewire\Admin\Products;
 
 use App\Models\Category;
+use App\Models\Option;
 use App\Models\Product;
 use App\Models\Store;
 use App\Models\TaxRate;
 use Livewire\Component;
 use Livewire\WithFileUploads;
+use Livewire\WithPagination;
 use Mary\Traits\Toast;
 
 class ProductEdit extends Component
 {
-    use Toast, WithFileUploads;
+    use Toast, WithFileUploads, WithPagination;
 
     public Product $product;
 
@@ -33,6 +35,14 @@ class ProductEdit extends Component
 
     // Categories
     public $selectedCategories = [];
+    
+    // Options - 必須オプション用
+    public $selectedUnassignedRequiredOptions = [];
+    public $selectedAssignedRequiredOptions = [];
+    
+    // Options - 任意オプション用
+    public $selectedUnassignedOptionalOptions = [];
+    public $selectedAssignedOptionalOptions = [];
 
     protected $rules = [
         'store_id' => 'required|exists:stores,id',
@@ -224,6 +234,232 @@ class ProductEdit extends Component
     {
         return $this->redirectRoute('admin.products.index');
     }
+    
+    // 必須オプション関連メソッド
+    public function assignRequiredOptions()
+    {
+        $user = auth()->user();
+        
+        if (!$user->isSuperAdmin()) {
+            $this->error('オプションの関連付け権限がありません。商品マスターデータはPOS側で管理されています。');
+            return;
+        }
+
+        if (empty($this->selectedUnassignedRequiredOptions)) {
+            $this->warning('オプションを選択してください。');
+            return;
+        }
+
+        // 最大sort_orderを取得
+        $maxSortOrder = $this->product->options()->max('product_to_options.sort_order') ?? 0;
+
+        $attachData = [];
+        foreach ($this->selectedUnassignedRequiredOptions as $index => $optionId) {
+            $attachData[$optionId] = ['sort_order' => $maxSortOrder + $index + 1];
+        }
+        
+        $this->product->options()->attach($attachData);
+        
+        // 選択状態をクリア
+        $this->selectedUnassignedRequiredOptions = [];
+        $this->selectedAssignedRequiredOptions = [];
+        
+        $this->success('必須オプションを商品に追加しました。');
+    }
+
+    public function unassignRequiredOptions()
+    {
+        $user = auth()->user();
+        
+        if (!$user->isSuperAdmin()) {
+            $this->error('オプションの関連付け解除権限がありません。商品マスターデータはPOS側で管理されています。');
+            return;
+        }
+
+        if (empty($this->selectedAssignedRequiredOptions)) {
+            $this->warning('オプションを選択してください。');
+            return;
+        }
+
+        $this->product->options()->detach($this->selectedAssignedRequiredOptions);
+        
+        // 選択状態をクリア
+        $this->selectedUnassignedRequiredOptions = [];
+        $this->selectedAssignedRequiredOptions = [];
+        
+        $this->success('必須オプションを商品から削除しました。');
+    }
+    
+    public function moveRequiredOptionUp($optionId)
+    {
+        $user = auth()->user();
+
+        if (!$user->isSuperAdmin()) {
+            $this->error('並び替え権限がありません。商品マスターデータはPOS側で管理されています。');
+            return;
+        }
+
+        // 現在のオプションを取得（product_to_optionsピボットテーブルから）
+        $currentPivot = \DB::table('product_to_options')
+            ->where('product_id', $this->product->id)
+            ->where('option_id', $optionId)
+            ->first();
+        
+        if (!$currentPivot) {
+            $this->error('オプションが見つかりません。');
+            return;
+        }
+
+        // 権限チェック
+        if (!$user->hasStoreAccess($this->product->store_id)) {
+            $this->error('このオプションを操作する権限がありません。');
+            return;
+        }
+
+        // 一つ上のオプションを取得
+        $upperPivot = \DB::table('product_to_options')
+            ->where('product_id', $this->product->id)
+            ->where('sort_order', '<', $currentPivot->sort_order)
+            ->orderBy('sort_order', 'desc')
+            ->first();
+
+        if ($upperPivot) {
+            // DB トランザクションで順序を入れ替え
+            \DB::transaction(function () use ($currentPivot, $upperPivot) {
+                $tempOrder = $currentPivot->sort_order;
+                \DB::table('product_to_options')
+                    ->where('id', $currentPivot->id)
+                    ->update(['sort_order' => $upperPivot->sort_order]);
+                \DB::table('product_to_options')
+                    ->where('id', $upperPivot->id)
+                    ->update(['sort_order' => $tempOrder]);
+            });
+
+            // 並び替え後はページ全体をリロードして確実に状態をリセット
+            return redirect()->route('admin.products.edit', $this->product->id)
+                ->with('success', 'オプションの並び順を更新しました。');
+        } else {
+            $this->error('これ以上上に移動できません。');
+        }
+    }
+
+    public function moveRequiredOptionDown($optionId)
+    {
+        $user = auth()->user();
+
+        if (!$user->isSuperAdmin()) {
+            $this->error('並び替え権限がありません。商品マスターデータはPOS側で管理されています。');
+            return;
+        }
+
+        // 現在のオプションを取得（product_to_optionsピボットテーブルから）
+        $currentPivot = \DB::table('product_to_options')
+            ->where('product_id', $this->product->id)
+            ->where('option_id', $optionId)
+            ->first();
+        
+        if (!$currentPivot) {
+            $this->error('オプションが見つかりません。');
+            return;
+        }
+
+        // 権限チェック
+        if (!$user->hasStoreAccess($this->product->store_id)) {
+            $this->error('このオプションを操作する権限がありません。');
+            return;
+        }
+
+        // 一つ下のオプションを取得
+        $lowerPivot = \DB::table('product_to_options')
+            ->where('product_id', $this->product->id)
+            ->where('sort_order', '>', $currentPivot->sort_order)
+            ->orderBy('sort_order', 'asc')
+            ->first();
+
+        if ($lowerPivot) {
+            // DB トランザクションで順序を入れ替え
+            \DB::transaction(function () use ($currentPivot, $lowerPivot) {
+                $tempOrder = $currentPivot->sort_order;
+                \DB::table('product_to_options')
+                    ->where('id', $currentPivot->id)
+                    ->update(['sort_order' => $lowerPivot->sort_order]);
+                \DB::table('product_to_options')
+                    ->where('id', $lowerPivot->id)
+                    ->update(['sort_order' => $tempOrder]);
+            });
+
+            // 並び替え後はページ全体をリロードして確実に状態をリセット
+            return redirect()->route('admin.products.edit', $this->product->id)
+                ->with('success', 'オプションの並び順を更新しました。');
+        } else {
+            $this->error('これ以上下に移動できません。');
+        }
+    }
+    
+    // 任意オプション関連メソッド
+    public function assignOptionalOptions()
+    {
+        $user = auth()->user();
+        
+        if (!$user->isSuperAdmin()) {
+            $this->error('オプションの関連付け権限がありません。商品マスターデータはPOS側で管理されています。');
+            return;
+        }
+
+        if (empty($this->selectedUnassignedOptionalOptions)) {
+            $this->warning('オプションを選択してください。');
+            return;
+        }
+
+        // 最大sort_orderを取得
+        $maxSortOrder = $this->product->options()->max('product_to_options.sort_order') ?? 0;
+
+        $attachData = [];
+        foreach ($this->selectedUnassignedOptionalOptions as $index => $optionId) {
+            $attachData[$optionId] = ['sort_order' => $maxSortOrder + $index + 1];
+        }
+        
+        $this->product->options()->attach($attachData);
+        
+        // 選択状態をクリア
+        $this->selectedUnassignedOptionalOptions = [];
+        $this->selectedAssignedOptionalOptions = [];
+        
+        $this->success('任意オプションを商品に追加しました。');
+    }
+
+    public function unassignOptionalOptions()
+    {
+        $user = auth()->user();
+        
+        if (!$user->isSuperAdmin()) {
+            $this->error('オプションの関連付け解除権限がありません。商品マスターデータはPOS側で管理されています。');
+            return;
+        }
+
+        if (empty($this->selectedAssignedOptionalOptions)) {
+            $this->warning('オプションを選択してください。');
+            return;
+        }
+
+        $this->product->options()->detach($this->selectedAssignedOptionalOptions);
+        
+        // 選択状態をクリア
+        $this->selectedUnassignedOptionalOptions = [];
+        $this->selectedAssignedOptionalOptions = [];
+        
+        $this->success('任意オプションを商品から削除しました。');
+    }
+    
+    public function moveOptionalOptionUp($optionId)
+    {
+        return $this->moveRequiredOptionUp($optionId); // 同じロジックを使用（returnを追加）
+    }
+
+    public function moveOptionalOptionDown($optionId)
+    {
+        return $this->moveRequiredOptionDown($optionId); // 同じロジックを使用（returnを追加）
+    }
 
     public function render()
     {
@@ -235,12 +471,45 @@ class ProductEdit extends Component
 
         // 税込価格を計算
         $taxInPrice = $this->calculateTaxInPrice();
+        
+        // この商品に現在設定されているオプションIDを取得
+        $assignedOptionIds = $this->product->options()->pluck('options.id')->toArray();
+        
+        // 必須オプション - 未設定
+        $unassignedRequiredOptions = Option::where('store_id', $this->product->store_id)
+            ->where('required', true)
+            ->whereNotIn('id', $assignedOptionIds)
+            ->orderBy('title')
+            ->get();
+            
+        // 必須オプション - 設定済み
+        $assignedRequiredOptions = $this->product->options()
+            ->where('required', true)
+            ->orderByPivot('sort_order')
+            ->get();
+            
+        // 任意オプション - 未設定
+        $unassignedOptionalOptions = Option::where('store_id', $this->product->store_id)
+            ->where('required', false)
+            ->whereNotIn('id', $assignedOptionIds)
+            ->orderBy('title')
+            ->get();
+            
+        // 任意オプション - 設定済み
+        $assignedOptionalOptions = $this->product->options()
+            ->where('required', false)
+            ->orderByPivot('sort_order')
+            ->get();
 
         return view('livewire.admin.products.product-edit', [
             'stores' => $stores,
             'categories' => $categories,
             'canEdit' => $user->isSuperAdmin(),
             'taxInPrice' => $taxInPrice,
+            'unassignedRequiredOptions' => $unassignedRequiredOptions,
+            'assignedRequiredOptions' => $assignedRequiredOptions,
+            'unassignedOptionalOptions' => $unassignedOptionalOptions,
+            'assignedOptionalOptions' => $assignedOptionalOptions,
         ])->layout('components.layouts.admin', ['title' => '商品編集 - 管理画面']);
     }
 }

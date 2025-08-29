@@ -49,7 +49,7 @@ class Product extends Model
         return $this->belongsToMany(Category::class, 'category_product')
             ->withPivot('sort_order')
             ->withTimestamps()
-            ->orderBy('pivot_sort_order');
+            ->orderByPivot('sort_order');
     }
 
     public function options()
@@ -57,7 +57,7 @@ class Product extends Model
         return $this->belongsToMany(Option::class, 'product_to_options')
             ->withPivot('sort_order')
             ->withTimestamps()
-            ->orderBy('pivot_sort_order');
+            ->orderByPivot('sort_order');
     }
 
     public function optionDetails()

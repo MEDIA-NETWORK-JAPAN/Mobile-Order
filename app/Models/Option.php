@@ -33,7 +33,7 @@ class Option extends Model
         return $this->belongsToMany(Product::class, 'product_to_options')
             ->withPivot('sort_order')
             ->withTimestamps()
-            ->orderBy('pivot_sort_order');
+            ->orderByPivot('sort_order');
     }
 
     public function optionDetails()

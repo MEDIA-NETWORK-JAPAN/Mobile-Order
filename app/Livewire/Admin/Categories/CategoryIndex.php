@@ -90,6 +90,11 @@ class CategoryIndex extends Component
         return redirect()->route('admin.categories.index', $params);
     }
 
+    public function create()
+    {
+        return redirect()->route('admin.categories.create');
+    }
+
     public function editCategory($categoryId)
     {
         return redirect()->route('admin.categories.edit', $categoryId);

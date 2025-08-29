@@ -26,7 +26,7 @@
     </div>
 
     {{-- フィルター --}}
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <x-mary-input 
             wire:model.live="search" 
             placeholder="オプション名で検索..." 
@@ -40,8 +40,29 @@
                 option-label="name" 
                 option-value="id" 
                 placeholder="店舗を選択"
+                wire:key="store-select-{{ $selectedStore }}"
             />
         @endif
+
+        <x-mary-select
+            wire:model.live="requiredFilter"
+            :options="[
+                ['value' => 'required', 'label' => '必須のみ'],
+                ['value' => 'optional', 'label' => '任意のみ']
+            ]"
+            option-label="label"
+            option-value="value"
+            placeholder="必須/任意で絞り込み"
+            wire:key="required-select-{{ $requiredFilter }}"
+        />
+
+        <x-mary-button 
+            wire:click="clearFilters" 
+            class="btn-outline"
+            icon="o-x-mark"
+        >
+            フィルタクリア
+        </x-mary-button>
     </div>
 
     {{-- テーブル --}}
@@ -57,7 +78,6 @@
                     </th>
                     <th>店舗</th>
                     <th>選択肢数</th>
-                    <th>関連商品数</th>
                     <th>必須</th>
                     <th>選択タイプ</th>
                     <th>操作</th>
@@ -66,78 +86,52 @@
             <tbody>
                 @forelse($options as $option)
                     <tr>
-                        @if($editingOption === $option->id)
-                            {{-- インライン編集モード --}}
-                            <td>
-                                <x-mary-input 
-                                    wire:model="editingTitle" 
-                                    size="sm"
-                                    maxlength="45"
-                                />
-                            </td>
-                            <td>{{ $option->store->name }}</td>
-                            <td>{{ $option->option_details_count }}</td>
-                            <td>{{ $option->products_count }}</td>
-                            <td>
-                                @if($option->required)
-                                    <span class="inline-block px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded-full">必須</span>
-                                @else
-                                    <span class="inline-block px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">任意</span>
-                                @endif
-                            </td>
-                            <td>
-                                <span class="inline-block px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
-                                    {{ $option->selection_type === 'single' ? '単一選択' : '複数選択' }}
-                                </span>
-                            </td>
-                            <td>
-                                <button wire:click="updateOption" class="px-3 py-1 text-sm font-medium text-green-600 bg-green-50 hover:bg-green-100 rounded-md transition-colors mr-2">
-                                    保存
-                                </button>
-                                <button wire:click="cancelEdit" class="px-3 py-1 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors">
-                                    キャンセル
-                                </button>
-                            </td>
-                        @else
-                            {{-- 通常表示モード --}}
-                            <td>{{ $option->title }}</td>
-                            <td>{{ $option->store->name }}</td>
-                            <td>{{ $option->option_details_count }}</td>
-                            <td>{{ $option->products_count }}</td>
-                            <td>
-                                @if($option->required)
-                                    <span class="inline-block px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded-full">必須</span>
-                                @else
-                                    <span class="inline-block px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">任意</span>
-                                @endif
-                            </td>
-                            <td>
-                                <span class="inline-block px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
-                                    {{ $option->selection_type === 'single' ? '単一選択' : '複数選択' }}
-                                </span>
-                            </td>
-                            <td>
-                                @if($canEdit)
-                                    <button wire:click="editOption({{ $option->id }})" class="px-3 py-1 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors mr-2">
-                                        編集
-                                    </button>
-                                    @if($option->products_count === 0)
-                                        <button wire:click="deleteOption({{ $option->id }})" class="px-3 py-1 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-md transition-colors"
-                                                onclick="return confirm('本当にこのオプションを削除しますか？')">
-                                            削除
-                                        </button>
-                                    @endif
-                                @else
-                                    <span class="px-3 py-1 text-sm font-medium text-gray-600 bg-gray-50 rounded-md">
-                                        詳細
-                                    </span>
-                                @endif
-                            </td>
-                        @endif
+                        <td>{{ $option->title }}</td>
+                        <td>{{ $option->store->name }}</td>
+                        <td>{{ $option->option_details_count }}</td>
+                        <td>
+                            @if($option->required)
+                                <span class="inline-block px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded-full">必須</span>
+                            @else
+                                <span class="inline-block px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">任意</span>
+                            @endif
+                        </td>
+                        <td>
+                            <span class="inline-block px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
+                                {{ $option->selection_type === 'single' ? '単一選択' : '複数選択' }}
+                            </span>
+                        </td>
+                        <td>
+                            @if($canEdit)
+                                <x-mary-button 
+                                    wire:click="editOption({{ $option->id }})" 
+                                    size="sm" 
+                                    class="btn-primary btn-sm mr-2"
+                                >
+                                    編集
+                                </x-mary-button>
+                                <x-mary-button 
+                                    wire:click="deleteOption({{ $option->id }})"
+                                    wire:confirm="本当にこのオプションを削除しますか？"
+                                    size="sm" 
+                                    class="btn-error btn-sm"
+                                >
+                                    削除
+                                </x-mary-button>
+                            @else
+                                <x-mary-button 
+                                    wire:click="editOption({{ $option->id }})" 
+                                    size="sm" 
+                                    class="btn-info btn-sm"
+                                >
+                                    詳細
+                                </x-mary-button>
+                            @endif
+                        </td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="7" class="text-center py-4 text-gray-500">
+                        <td colspan="6" class="text-center py-4 text-gray-500">
                             オプションが見つかりません
                         </td>
                     </tr>

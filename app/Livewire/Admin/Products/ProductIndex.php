@@ -115,6 +115,11 @@ class ProductIndex extends Component
         return redirect()->route('admin.products.index', $params);
     }
 
+    public function editProduct($productId)
+    {
+        return redirect()->route('admin.products.edit', $productId);
+    }
+
     public function deleteProduct($productId)
     {
         $product = Product::find($productId);
@@ -163,7 +168,7 @@ class ProductIndex extends Component
             ->when(!$user->isSuperAdmin(), fn ($query) => $query->where('store_id', $user->store_id))
             ->orderBy($this->sortField, $this->sortDirection);
 
-        $products = $productsQuery->paginate(10);
+        $products = $productsQuery->paginate(50);
 
         // フィルター用データ
         $stores = $user->isSuperAdmin() ? Store::active()->get() : collect();

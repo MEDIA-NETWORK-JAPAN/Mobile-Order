@@ -143,45 +143,50 @@
                         <td>
                             @switch($product->availability_status)
                                 @case('available')
-                                    <span class="badge badge-success">販売中</span>
+                                    <span class="inline-block px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">販売中</span>
                                     @break
                                 @case('sold_out')
-                                    <span class="badge badge-error">売り切れ</span>
+                                    <span class="inline-block px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded-full">売り切れ</span>
                                     @break
                                 @case('not_arrived')
-                                    <span class="badge badge-warning">未入荷</span>
+                                    <span class="inline-block px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded-full">未入荷</span>
                                     @break
                                 @case('preparing')
-                                    <span class="badge badge-info">準備中</span>
+                                    <span class="inline-block px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">準備中</span>
                                     @break
                             @endswitch
                         </td>
                         <td>
                             @if($product->is_active)
-                                <span class="badge badge-success">有効</span>
+                                <span class="inline-block px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">有効</span>
                             @else
-                                <span class="badge badge-error">無効</span>
+                                <span class="inline-block px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded-full">無効</span>
                             @endif
                         </td>
                         <td>
                             @if($canEdit)
-                                <a href="{{ route('admin.products.edit', $product) }}">
-                                    <button class="px-3 py-1 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors mr-2">
+                                <div class="flex space-x-2">
+                                    <x-mary-button 
+                                        wire:click="editProduct({{ $product->id }})" 
+                                        class="btn-primary btn-xs"
+                                    >
                                         編集
-                                    </button>
-                                </a>
-                                <button wire:click="deleteProduct({{ $product->id }})"
+                                    </x-mary-button>
+                                    <x-mary-button 
+                                        wire:click="deleteProduct({{ $product->id }})"
                                         wire:confirm="本当にこの商品を削除しますか？"
-                                        wire:key="delete-btn-{{ $product->id }}"
-                                        class="px-3 py-1 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-md transition-colors">
-                                    削除
-                                </button>
+                                        class="btn-error btn-xs"
+                                    >
+                                        削除
+                                    </x-mary-button>
+                                </div>
                             @else
-                                <a href="{{ route('admin.products.edit', $product) }}">
-                                    <button class="px-3 py-1 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors">
-                                        詳細
-                                    </button>
-                                </a>
+                                <x-mary-button 
+                                    wire:click="editProduct({{ $product->id }})" 
+                                    class="btn-outline btn-xs"
+                                >
+                                    詳細
+                                </x-mary-button>
                             @endif
                         </td>
                     </tr>

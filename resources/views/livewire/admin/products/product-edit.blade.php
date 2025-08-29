@@ -278,4 +278,222 @@
             </div>
         </div>
     </form>
+
+    {{-- 必須オプション設定セクション --}}
+    @if($canEdit)
+        <div class="mt-8 card bg-base-100 shadow-xl p-6">
+            <h3 class="text-lg font-semibold mb-4">必須オプション設定</h3>
+            
+            {{-- 商品選択UI --}}
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {{-- 未設定必須オプション --}}
+                <div class="border rounded-lg p-4">
+                    <h4 class="font-medium mb-3">未設定必須オプション ({{ $unassignedRequiredOptions->count() }}件)</h4>
+                    <div class="max-h-96 overflow-y-auto space-y-2">
+                        @foreach($unassignedRequiredOptions as $option)
+                            <label class="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    wire:model.live="selectedUnassignedRequiredOptions"
+                                    value="{{ $option->id }}"
+                                    class="checkbox checkbox-sm mr-3"
+                                    wire:key="unassigned-required-{{ $option->id }}"
+                                />
+                                <div class="flex-1">
+                                    <div class="text-sm font-medium">{{ $option->title }}</div>
+                                    <div class="text-xs text-gray-600">{{ $option->selection_type === 'single' ? '単一選択' : '複数選択' }}</div>
+                                </div>
+                            </label>
+                        @endforeach
+                        @if($unassignedRequiredOptions->count() === 0)
+                            <div class="text-center text-gray-500 py-4">
+                                該当するオプションがありません
+                            </div>
+                        @endif
+                    </div>
+                </div>
+                
+                {{-- 移動ボタン --}}
+                <div class="flex flex-col justify-center items-center space-y-4">
+                    <button 
+                        wire:click="assignRequiredOptions"
+                        class="btn btn-primary"
+                        @if(empty($selectedUnassignedRequiredOptions)) disabled @endif
+                    >
+                        →<br>追加
+                    </button>
+                    
+                    <button 
+                        wire:click="unassignRequiredOptions"
+                        class="btn btn-secondary"
+                        @if(empty($selectedAssignedRequiredOptions)) disabled @endif
+                    >
+                        ←<br>削除
+                    </button>
+                </div>
+                
+                {{-- 設定済み必須オプション --}}
+                <div class="border rounded-lg p-4">
+                    <h4 class="font-medium mb-3">
+                        設定済み必須オプション ({{ $assignedRequiredOptions->count() }}件)
+                        @if($assignedRequiredOptions->count() > 0)
+                            <span class="text-xs text-gray-500 ml-2">↑↓で並び替え</span>
+                        @endif
+                    </h4>
+                    <div class="max-h-96 overflow-y-auto space-y-2">
+                        @foreach($assignedRequiredOptions as $option)
+                            <div class="flex items-center p-2 hover:bg-gray-50 rounded">
+                                <input
+                                    type="checkbox"
+                                    wire:model.live="selectedAssignedRequiredOptions"
+                                    value="{{ $option->id }}"
+                                    class="checkbox checkbox-sm mr-3"
+                                    wire:key="assigned-required-{{ $option->id }}"
+                                />
+                                <div class="flex-1">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <div class="text-sm font-medium">{{ $option->title }}</div>
+                                            <div class="text-xs text-gray-600">{{ $option->selection_type === 'single' ? '単一選択' : '複数選択' }}</div>
+                                        </div>
+                                        <div class="flex items-center space-x-1">
+                                            <button 
+                                                wire:click="moveRequiredOptionUp({{ $option->id }})"
+                                                class="btn btn-xs btn-ghost"
+                                                wire:loading.attr="disabled"
+                                                title="上に移動"
+                                            >
+                                                ↑
+                                            </button>
+                                            <button 
+                                                wire:click="moveRequiredOptionDown({{ $option->id }})"
+                                                class="btn btn-xs btn-ghost"
+                                                wire:loading.attr="disabled"
+                                                title="下に移動"
+                                            >
+                                                ↓
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        @endforeach
+                        @if($assignedRequiredOptions->count() === 0)
+                            <div class="text-center text-gray-500 py-4">
+                                設定されたオプションがありません
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{-- 任意オプション設定セクション --}}
+        <div class="mt-8 card bg-base-100 shadow-xl p-6">
+            <h3 class="text-lg font-semibold mb-4">任意オプション設定</h3>
+            
+            {{-- 商品選択UI --}}
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {{-- 未設定任意オプション --}}
+                <div class="border rounded-lg p-4">
+                    <h4 class="font-medium mb-3">未設定任意オプション ({{ $unassignedOptionalOptions->count() }}件)</h4>
+                    <div class="max-h-96 overflow-y-auto space-y-2">
+                        @foreach($unassignedOptionalOptions as $option)
+                            <label class="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    wire:model.live="selectedUnassignedOptionalOptions"
+                                    value="{{ $option->id }}"
+                                    class="checkbox checkbox-sm mr-3"
+                                    wire:key="unassigned-optional-{{ $option->id }}"
+                                />
+                                <div class="flex-1">
+                                    <div class="text-sm font-medium">{{ $option->title }}</div>
+                                    <div class="text-xs text-gray-600">{{ $option->selection_type === 'single' ? '単一選択' : '複数選択' }}</div>
+                                </div>
+                            </label>
+                        @endforeach
+                        @if($unassignedOptionalOptions->count() === 0)
+                            <div class="text-center text-gray-500 py-4">
+                                該当するオプションがありません
+                            </div>
+                        @endif
+                    </div>
+                </div>
+                
+                {{-- 移動ボタン --}}
+                <div class="flex flex-col justify-center items-center space-y-4">
+                    <button 
+                        wire:click="assignOptionalOptions"
+                        class="btn btn-primary"
+                        @if(empty($selectedUnassignedOptionalOptions)) disabled @endif
+                    >
+                        →<br>追加
+                    </button>
+                    
+                    <button 
+                        wire:click="unassignOptionalOptions"
+                        class="btn btn-secondary"
+                        @if(empty($selectedAssignedOptionalOptions)) disabled @endif
+                    >
+                        ←<br>削除
+                    </button>
+                </div>
+                
+                {{-- 設定済み任意オプション --}}
+                <div class="border rounded-lg p-4">
+                    <h4 class="font-medium mb-3">
+                        設定済み任意オプション ({{ $assignedOptionalOptions->count() }}件)
+                        @if($assignedOptionalOptions->count() > 0)
+                            <span class="text-xs text-gray-500 ml-2">↑↓で並び替え</span>
+                        @endif
+                    </h4>
+                    <div class="max-h-96 overflow-y-auto space-y-2">
+                        @foreach($assignedOptionalOptions as $option)
+                            <div class="flex items-center p-2 hover:bg-gray-50 rounded">
+                                <input
+                                    type="checkbox"
+                                    wire:model.live="selectedAssignedOptionalOptions"
+                                    value="{{ $option->id }}"
+                                    class="checkbox checkbox-sm mr-3"
+                                    wire:key="assigned-optional-{{ $option->id }}"
+                                />
+                                <div class="flex-1">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <div class="text-sm font-medium">{{ $option->title }}</div>
+                                            <div class="text-xs text-gray-600">{{ $option->selection_type === 'single' ? '単一選択' : '複数選択' }}</div>
+                                        </div>
+                                        <div class="flex items-center space-x-1">
+                                            <button 
+                                                wire:click="moveOptionalOptionUp({{ $option->id }})"
+                                                class="btn btn-xs btn-ghost"
+                                                wire:loading.attr="disabled"
+                                                title="上に移動"
+                                            >
+                                                ↑
+                                            </button>
+                                            <button 
+                                                wire:click="moveOptionalOptionDown({{ $option->id }})"
+                                                class="btn btn-xs btn-ghost"
+                                                wire:loading.attr="disabled"
+                                                title="下に移動"
+                                            >
+                                                ↓
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        @endforeach
+                        @if($assignedOptionalOptions->count() === 0)
+                            <div class="text-center text-gray-500 py-4">
+                                設定されたオプションがありません
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
 </div>

@@ -47,14 +47,33 @@
                 />
             </div>
 
-            {{-- 設定 --}}
+            {{-- オプション設定 --}}
             <div class="card bg-base-100 shadow-xl p-6">
-                <h3 class="text-lg font-semibold mb-4">設定</h3>
+                <h3 class="text-lg font-semibold mb-4">オプション設定</h3>
                 
-                <x-mary-checkbox 
-                    label="必須オプション" 
-                    wire:model="required"
-                    hint="チェックすると、このオプションが必須選択になります"
+                <div class="form-control">
+                    <label class="label cursor-pointer">
+                        <span class="label-text">必須オプション</span>
+                        <input
+                            type="checkbox"
+                            wire:model="required"
+                            class="checkbox"
+                            {{ $required ? 'checked' : '' }}
+                            {{ !$canEdit ? 'disabled' : '' }}
+                        />
+                    </label>
+                </div>
+
+                <x-mary-select
+                    label="選択タイプ"
+                    wire:model="selection_type"
+                    :options="[
+                        ['value' => 'single', 'label' => '単一選択'],
+                        ['value' => 'multiple', 'label' => '複数選択']
+                    ]"
+                    option-label="label"
+                    option-value="value"
+                    required
                     :disabled="!$canEdit"
                 />
             </div>
@@ -71,18 +90,41 @@
         </div>
 
         {{-- ボタン --}}
-        <div class="flex justify-end gap-4 mt-6">
-            <a href="{{ route('admin.options.index') }}" wire:navigate>
-                <button type="button" class="px-4 py-2 font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors">
-                    キャンセル
-                </button>
-            </a>
-            
+        <div class="mt-8 flex justify-center space-x-4">
+            <button
+                type="button"
+                wire:click="$dispatch('navigate', { url: '{{ route('admin.options.index') }}' })"
+                class="btn btn-outline btn-lg"
+            >
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+                キャンセル
+            </button>
+
             @if($canEdit)
-                <button type="submit" class="px-4 py-2 font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">
-                    作成
+                <button
+                    type="submit"
+                    class="btn btn-primary btn-lg"
+                    wire:loading.attr="disabled"
+                >
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                    オプションを作成
+                    <span wire:loading wire:target="save" class="loading loading-spinner loading-sm ml-2"></span>
                 </button>
             @endif
+        </div>
+
+        {{-- ローディング表示 --}}
+        <div wire:loading wire:target="save" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-base-100 p-6 rounded-lg shadow-xl">
+                <div class="flex items-center space-x-3">
+                    <span class="loading loading-spinner loading-lg"></span>
+                    <span class="text-lg">作成中...</span>
+                </div>
+            </div>
         </div>
     </form>
 </div>

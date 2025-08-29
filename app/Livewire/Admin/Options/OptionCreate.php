@@ -18,10 +18,13 @@ class OptionCreate extends Component
 
     public $required = false;
 
+    public $selection_type = 'single';
+
     protected $rules = [
         'store_id' => 'required|exists:stores,id',
         'title' => 'required|max:45',
         'required' => 'required|boolean',
+        'selection_type' => 'required|in:single,multiple',
     ];
 
     public function mount()
@@ -77,7 +80,7 @@ class OptionCreate extends Component
             'store_id' => $this->store_id,
             'title' => $this->title,
             'required' => $this->required,
-            'selection_type' => 'single', // デフォルトは単一選択
+            'selection_type' => $this->selection_type,
             'translations' => null,
         ]);
 

@@ -16,17 +16,14 @@ class OptionIndex extends Component
 
     public $selectedStore = '';
 
+    public $requiredFilter = '';
+
     public $sortField = 'title';
 
     public $sortDirection = 'asc';
 
     // 権限制御
     public $canEdit = false;
-
-    // インライン編集
-    public $editingOption = null;
-
-    public $editingTitle = '';
 
     public function mount()
     {
@@ -35,8 +32,20 @@ class OptionIndex extends Component
         // SuperAdminのみ編集可能（POS中心設計）
         $this->canEdit = $user->isSuperAdmin();
 
-        if (! $user->isSuperAdmin() && $user->store_id) {
+        // URLパラメータまたはユーザーの店舗IDから店舗フィルタを設定
+        if (request()->has('store')) {
+            $this->selectedStore = request()->get('store');
+        } elseif (! $user->isSuperAdmin() && $user->store_id) {
             $this->selectedStore = $user->store_id;
+        }
+
+        // セッションフラッシュメッセージをToast形式で表示
+        if (session('success')) {
+            $this->success(session('success'));
+        }
+
+        if (session('error')) {
+            $this->error(session('error'));
         }
     }
 
@@ -46,6 +55,11 @@ class OptionIndex extends Component
     }
 
     public function updatedSelectedStore()
+    {
+        $this->resetPage();
+    }
+
+    public function updatedRequiredFilter()
     {
         $this->resetPage();
     }
@@ -60,62 +74,24 @@ class OptionIndex extends Component
         }
     }
 
+    public function clearFilters()
+    {
+        // 権限に応じて保持すべき値を記憶
+        $user = auth()->user();
+        
+        // クエリパラメータを構築
+        $params = [];
+        if (!$user->isSuperAdmin() && $user->store_id) {
+            $params['store'] = $user->store_id;
+        }
+        
+        // ページリダイレクトでフィルタクリア
+        return redirect()->route('admin.options.index', $params);
+    }
+
     public function editOption($optionId)
     {
-        $option = Option::find($optionId);
-
-        if (! $option) {
-            $this->error('オプションが見つかりません。');
-
-            return;
-        }
-
-        // 権限チェック
-        $user = auth()->user();
-
-        // SuperAdmin権限チェック（緊急編集機能）
-        if (! $user->isSuperAdmin()) {
-            $this->error('オプションの編集権限がありません。オプションマスターデータはPOS側で管理されています。');
-
-            return;
-        }
-
-        if (! $user->hasStoreAccess($option->store_id)) {
-            $this->error('このオプションを編集する権限がありません。');
-
-            return;
-        }
-
-        $this->editingOption = $optionId;
-        $this->editingTitle = $option->title;
-    }
-
-    public function updateOption()
-    {
-        $this->validate([
-            'editingTitle' => 'required|max:45',
-        ]);
-
-        $option = Option::find($this->editingOption);
-
-        if (! $option) {
-            $this->error('オプションが見つかりません。');
-
-            return;
-        }
-
-        $option->update([
-            'title' => $this->editingTitle,
-        ]);
-
-        $this->success('オプションを更新しました。');
-        $this->cancelEdit();
-    }
-
-    public function cancelEdit()
-    {
-        $this->editingOption = null;
-        $this->editingTitle = '';
+        return redirect()->route('admin.options.edit', $optionId);
     }
 
 
@@ -162,11 +138,13 @@ class OptionIndex extends Component
 
         // オプションクエリ
         $optionsQuery = Option::with(['store'])
-            ->withCount(['optionDetails', 'products'])
+            ->withCount(['optionDetails'])
             ->when($this->search, fn ($query) => $query->where('title', 'like', "%{$this->search}%")
             )
             ->when($this->selectedStore, fn ($query) => $query->where('store_id', $this->selectedStore)
             )
+            ->when($this->requiredFilter === 'required', fn ($query) => $query->where('required', true))
+            ->when($this->requiredFilter === 'optional', fn ($query) => $query->where('required', false))
             ->when(! $user->isSuperAdmin(), fn ($query) => $query->where('store_id', $user->store_id)
             )
             ->orderBy($this->sortField, $this->sortDirection);
