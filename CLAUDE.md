@@ -54,6 +54,11 @@ sail exec laravel.test vendor/bin/pint --test # ドライラン（変更なし�
 sail artisan make:model Product -mfc   # モデル、マイグレーション、ファクトリー、コントローラー作成
 sail artisan make:livewire ProductCard # Livewireコンポーネント作成
 sail artisan make:migration create_cart_logs_table  # マイグレーション作成
+
+# 管理画面Livewireコンポーネント作成例
+sail artisan make:livewire Admin/Products/ProductIndex
+sail artisan make:livewire Admin/Products/ProductEdit
+sail artisan make:livewire Admin/Options/OptionIndex
 ```
 
 ## 🚨 最重要：設計書絶対遵守ルール
@@ -97,7 +102,27 @@ products（商品マスター）
 ├── オプション商品（チャーシュー、ネギなど）
 └── サイズ商品（大盛り、特盛りなど）
 
-※すべてproductsテーブルで管理し、関連はcategory_product、option_detailで構築
+※すべてproductsテーブルで管理し、関連はcategory_product、product_to_optionsで構築
+```
+
+### 管理機能の実装パターン
+```
+Admin管理画面の統一パターン（Phase 2完了済み）:
+
+Index画面:
+├── フィルター機能（検索・カテゴリ・状態・店舗）
+├── クリアフィルター機能（redirect方式）
+├── ソート機能（カラムクリック）
+├── ページネーション
+├── 権限別表示（SuperAdmin/Admin/閲覧のみ）
+└── 操作ボタン（編集・削除・詳細）
+
+Edit画面:
+├── 基本情報編集
+├── 関連データ管理（3カラムUI: 未割当 ← 操作 → 割当済み）
+├── ソート機能（ドラッグ&ドロップ風UI）
+├── 一括操作（選択→割当/解除）
+└── リダイレクト方式での状態管理
 ```
 
 ### 認証システム（2層認証 + 管理・POS）
@@ -106,7 +131,7 @@ products（商品マスター）
    - **第2層**: ゲストセッション（個人識別・不正防止・端末特定）
    - **同意画面**: ハンドルキーパー・セキュリティポリシー同意
 2. **管理者認証**: Laravel Breeze（セッション/Cookie）
-3. **POS認証**: Laravel Sanctum（Bearer Token + IP制限）
+3. **POS認証**: Laravel Sanctum（Bearer Token）
 
 ### セッション管理（2層ハイブリッド方式）
 - **第1層 - 席セッション**: QRコード読み取り後の席管理（sessionsテーブル）
@@ -288,8 +313,8 @@ claude code "POS連携の整合性を確認してください"
 ## 開発フロー状況
 
 - **Phase 0**: プロジェクト初期化とドキュメント整備 ✅ 完了
-- **Phase 1**: 基盤構築（データベース、認証システム） ← 現在
-- **Phase 2**: 管理機能（管理者ログイン、メニュー管理）
+- **Phase 1**: 基盤構築（データベース、認証システム） ✅ 完了
+- **Phase 2**: 管理機能（管理者ログイン、メニュー管理） ✅ 完了 ← 現在
 - **Phase 3**: お客様向け機能（QRコード、メニュー表示、注文）
 - **Phase 4**: POS連携（変更記録、ポーリングAPI）
 - **Phase 5**: 最適化・本番準備
@@ -376,3 +401,56 @@ claude code "POS連携の整合性を確認してください"
 4. ゲストが注文をクラウドサーバーへ送信→orders, change_logsテーブルに書き込み
 5. POSからのポーリングで、change_logsに追加されたレコードから最新の注文内容を取得
 6. POS端末内の注文管理テーブルに書き込み→例：厨房プリンターに印字（オンプレ単独運用の処理とはここで合流する）
+
+## 重要な実装パターン
+
+### Livewireコンポーネント設計パターン
+```php
+// 必須：Mary\Traits\Toast, WithPagination
+use Mary\Traits\Toast;
+use Livewire\WithPagination;
+
+// 権限制御プロパティ
+public $canEdit = false;
+
+// フィルタープロパティの命名規則
+public $search = '';
+public $selectedCategory = '';
+public $availabilityFilter = '';
+
+// mount()での権限設定
+public function mount() {
+    $this->canEdit = auth()->user()->isSuperAdmin();
+}
+```
+
+### リダイレクト方式の状態管理
+```php
+// NG: プロパティリセットのみ（状態が不安定）
+$this->selectedItems = [];
+
+// OK: リダイレクトで確実な状態リセット
+return redirect()->route('admin.products.index');
+```
+
+### Pivot テーブル操作パターン
+```php
+// ソート順付きの関連付け
+$maxSortOrder = $this->product->options()->max('product_to_options.sort_order') ?? 0;
+$attachData = [];
+foreach ($selectedOptions as $index => $optionId) {
+    $attachData[$optionId] = ['sort_order' => $maxSortOrder + $index + 1];
+}
+$this->product->options()->attach($attachData);
+
+// 重要：pivot カラムのソート指定
+->orderByPivot('sort_order') // NG: ->orderBy('pivot_sort_order')
+```
+
+### エラーハンドリングと商品削除
+```php
+// 商品削除時のコード再利用対応
+$deletedCode = 'DELETED_' . time() . '_' . $product->code;
+$product->update(['code' => $deletedCode]);
+$product->delete(); // SoftDelete
+```

@@ -57,6 +57,7 @@
 - **モバイルWeb**: Session認証（Laravel Breezeカスタム）※ APIではなくWebルートで実装
 - **障害復旧**: cloud_synced=FALSEフラグでシンプル管理
 
+
 ## 2. API命名規則
 
 ### 2.1 エンドポイント命名
@@ -129,6 +130,7 @@ X-Request-ID: {uuid}
 - **500 Internal Server Error**: サーバー内部エラー
 
 ## 4. API エンドポイント一覧
+
 
 ### 4.1 認証・セッション管理API
 

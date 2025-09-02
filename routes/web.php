@@ -48,6 +48,7 @@ Route::middleware(['auth', 'verified'])->prefix(config('app.admin_prefix'))->nam
     // Options
     Route::get('/options', App\Livewire\Admin\Options\OptionIndex::class)->name('options.index');
     Route::get('/options/create', App\Livewire\Admin\Options\OptionCreate::class)->name('options.create');
+    Route::get('/options/{option}/edit', App\Livewire\Admin\Options\OptionEdit::class)->name('options.edit');
 
     // Orders (Phase 3で実装予定)
     Route::get('/orders', function () {

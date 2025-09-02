@@ -127,7 +127,7 @@
 | タスク | 推定時間 | 優先度 | 設計書参照 | 実装内容 |
 |--------|----------|--------|------------|----------|
 | **監視・ログシステム** | 4h | 🔴 高 | `12_infrastructure_deployment_design.md` | **ヘルスチェック、構造化ログ** |
-| **セキュリティ機能** | 3h | 🔴 高 | `11_non_functional_requirements.md` | **レート制限、認証ログ、IP制限** |
+| **セキュリティ機能** | 3h | 🔴 高 | `11_non_functional_requirements.md` | **レート制限、認証ログ** |
 | **エラーハンドリング拡張** | 2h | 🟡 中 | `05_error_handling_design.md` | **カスタム例外、自動リトライ** |
 | **アクセシビリティ対応** | 3h | 🟢 低 | `11_non_functional_requirements.md` | **WCAG 2.1 AA準拠** |
 

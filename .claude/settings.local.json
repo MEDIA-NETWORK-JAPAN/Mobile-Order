@@ -81,7 +81,10 @@
       "Bash(./vendor/bin/sail artisan view:clear)",
       "Bash(./vendor/bin/sail artisan migrate:fresh --seed)",
       "Bash(./vendor/bin/sail artisan make:livewire Admin/Options/OptionIndex)",
-      "Bash(./vendor/bin/sail artisan make:livewire:*)"
+      "Bash(./vendor/bin/sail artisan make:livewire:*)",
+      "Bash(./vendor/bin/sail exec laravel.test php artisan livewire:list:*)",
+      "Bash(./vendor/bin/sail exec laravel.test php artisan optimize:clear:*)",
+      "Bash(./vendor/bin/sail exec:*)"
     ],
     "deny": [
       "Bash(sudo:*)",
