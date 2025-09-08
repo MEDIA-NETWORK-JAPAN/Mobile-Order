@@ -856,7 +856,7 @@ aws ecr create-repository \
 # ECSクラスター作成
 aws ecs create-cluster \
     --cluster-name mobile-order-cluster \
-    --capacity-providers FARGATE FARGATE_SPOT \
+    --capacity-providers FARGATE \
     --default-capacity-provider-strategy capacityProvider=FARGATE,weight=1 \
     --settings name=containerInsights,value=enabled \
     --tags key=Name,value=mobile-order-cluster
@@ -1347,9 +1347,10 @@ aws logs describe-log-groups \
    aws rds stop-db-instance --db-instance-identifier mobile-order-dev-db
    ```
 
-2. **Fargate Spotの活用**
+2. **Savings Plans活用**
    ```bash
-   # Worker系タスクにSpotインスタンス使用で70%削減
+   # 1年契約で20%削減、Mobile Order Systemの安定性確保
+   # AWS管理コンソールから購入推奨
    ```
 
 3. **CloudWatch Logsのライフサイクル**

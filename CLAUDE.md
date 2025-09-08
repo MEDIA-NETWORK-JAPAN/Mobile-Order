@@ -454,3 +454,8 @@ $deletedCode = 'DELETED_' . time() . '_' . $product->code;
 $product->update(['code' => $deletedCode]);
 $product->delete(); // SoftDelete
 ```
+- # 指示
+現在AWS上で発生しているエラー解消するための対策を考えてください
+実行指示は対策案の提示を確認してから指示を出します
+## エラーメッセージ
+Unsupported cipher or incorrect key length. Supported ciphers are: aes-128-cbc, aes-256-cbc, aes-128-gcm, aes-256-gcm.

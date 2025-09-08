@@ -1,0 +1,183 @@
+{
+  "family": "mobile-order-web-secure",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::670704545755:role/mobile-order-ecs-execution-role",
+  "taskRoleArn": "arn:aws:iam::670704545755:role/mobile-order-ecs-task-role",
+  "containerDefinitions": [
+    {
+      "name": "nginx",
+      "image": "670704545755.dkr.ecr.ap-northeast-1.amazonaws.com/mobile-order/nginx:fixed",
+      "cpu": 256,
+      "memory": 512,
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 80,
+          "protocol": "tcp",
+          "name": "http"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/aws/ecs/mobile-order/web",
+          "awslogs-region": "ap-northeast-1",
+          "awslogs-stream-prefix": "nginx",
+          "awslogs-create-group": "true"
+        }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "curl -f http://localhost/health || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      },
+      "dependsOn": [
+        {
+          "containerName": "php-fpm",
+          "condition": "HEALTHY"
+        }
+      ]
+    },
+    {
+      "name": "php-fpm",
+      "image": "670704545755.dkr.ecr.ap-northeast-1.amazonaws.com/mobile-order/app:latest",
+      "cpu": 768,
+      "memory": 1536,
+      "essential": true,
+      "command": [
+        "/bin/sh",
+        "-c",
+        "cd /var/www/html && php artisan config:clear && php artisan route:clear && php artisan view:clear && php artisan config:cache && php artisan route:cache && php artisan view:cache && exec php-fpm"
+      ],
+      "environment": [
+        {
+          "name": "APP_ENV",
+          "value": "production"
+        },
+        {
+          "name": "APP_DEBUG",
+          "value": "false"
+        },
+        {
+          "name": "LOG_CHANNEL",
+          "value": "stderr"
+        },
+        {
+          "name": "LOG_LEVEL",
+          "value": "info"
+        },
+        {
+          "name": "SESSION_DRIVER",
+          "value": "redis"
+        },
+        {
+          "name": "CACHE_DRIVER", 
+          "value": "redis"
+        },
+        {
+          "name": "QUEUE_CONNECTION",
+          "value": "redis"
+        },
+        {
+          "name": "FILESYSTEM_DISK",
+          "value": "local"
+        },
+        {
+          "name": "APP_LOCALE",
+          "value": "ja"
+        },
+        {
+          "name": "SUPPORTED_LOCALES",
+          "value": "ja,en,zh-TW,zh-CN,ko"
+        },
+        {
+          "name": "QR_MODE",
+          "value": "temporary"
+        },
+        {
+          "name": "QR_SESSION_DEFAULT_TTL",
+          "value": "10800"
+        },
+        {
+          "name": "CART_TTL",
+          "value": "1800"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "APP_KEY",
+          "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:670704545755:secret:mobile-order/app-secrets-PXSmtK:APP_KEY::"
+        },
+        {
+          "name": "DB_HOST",
+          "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:670704545755:secret:mobile-order/app-secrets-PXSmtK:DB_HOST::"
+        },
+        {
+          "name": "DB_DATABASE",
+          "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:670704545755:secret:mobile-order/app-secrets-PXSmtK:DB_DATABASE::"
+        },
+        {
+          "name": "DB_USERNAME",
+          "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:670704545755:secret:mobile-order/app-secrets-PXSmtK:DB_USERNAME::"
+        },
+        {
+          "name": "DB_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:670704545755:secret:mobile-order/app-secrets-PXSmtK:DB_PASSWORD::"
+        },
+        {
+          "name": "REDIS_HOST",
+          "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:670704545755:secret:mobile-order/app-secrets-PXSmtK:REDIS_HOST::"
+        },
+        {
+          "name": "REDIS_PORT",
+          "valueFrom": "arn:aws:secretsmanager:ap-northeast-1:670704545755:secret:mobile-order/app-secrets-PXSmtK:REDIS_PORT::"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/aws/ecs/mobile-order/web",
+          "awslogs-region": "ap-northeast-1",
+          "awslogs-stream-prefix": "php-fpm",
+          "awslogs-create-group": "true"
+        }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "php-fpm -t || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 10,
+        "retries": 3,
+        "startPeriod": 120
+      }
+    }
+  ],
+  "tags": [
+    {
+      "key": "Name",
+      "value": "mobile-order-web-secure-task"
+    },
+    {
+      "key": "Project",
+      "value": "mobile-order"
+    },
+    {
+      "key": "Environment",
+      "value": "production"
+    },
+    {
+      "key": "SecurityLevel",
+      "value": "high"
+    }
+  ]
+}

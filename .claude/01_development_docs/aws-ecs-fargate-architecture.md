@@ -27,7 +27,7 @@ Mobile Order System - コンテナベースアーキテクチャ
 ### 1. ECSクラスター
 ```yaml
 クラスター名: mobile-order-cluster
-キャパシティプロバイダー: FARGATE, FARGATE_SPOT
+キャパシティプロバイダー: FARGATE
 Container Insights: 有効
 ```
 
@@ -117,7 +117,7 @@ Auto Scaling:
 #### Workerサービス
 ```yaml
 サービス名: mobile-order-worker-service
-起動タイプ: FARGATE_SPOT (コスト削減)
+起動タイプ: FARGATE
 タスク数: 1
 Auto Scaling:
   - メトリクス: SQSキュー長
@@ -317,7 +317,7 @@ DB_PASSWORD={RDS_PASSWORD}
 
 # セッション管理（ハイブリッド方式）
 SESSION_DRIVER=redis           # Laravelセッション状態管理
-SESSION_LIFETIME=180          # 3時間（席利用時間）
+SESSION_LIFETIME=          # 無制限（席利用時間）
 SESSION_ENCRYPT=true
 SESSION_CONNECTION=session
 
@@ -429,7 +429,7 @@ METRICS_ENABLED=true
 | Secrets Manager | 8シークレット | 800円 |
 | **合計** | | **約23,800円** |
 
-※ Fargate Spotを活用すれば、Worker/POS Sync分を最大70%削減可能（約3,000円削減）
+※ Mobile Order Systemの特性上、リアルタイム性・高可用性が重要なためFargate Spot使用せず
 
 ## 🚀 デプロイメントフロー
 
@@ -457,10 +457,11 @@ GitHub Actions:
 - **夜間**: Scheduled Scalingで縮小
 
 ### コスト最適化
-1. **Fargate Spot**: Workerタスクに活用 (70%削減)
-2. **Savings Plans**: 1年契約で20%削減
+1. **Savings Plans**: 1年契約で20%削減（推奨）
+2. **Reserved Instance**: 長期利用での割引活用
 3. **ECRライフサイクル**: 古いイメージ自動削除
 4. **S3ライフサイクル**: ログをGlacierへ移動
+5. **リソース監視**: CPU/メモリ使用率の定期見直し
 
 ### 障害対応
 - **ECSタスク障害**: 自動再起動

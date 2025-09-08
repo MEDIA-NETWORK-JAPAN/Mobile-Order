@@ -1,0 +1,241 @@
+# ================================================
+# Mobile Order System - Production Docker Compose
+# ベストプラクティス: セキュリティ・監視・ヘルスチェック
+# ================================================
+
+version: '3.8'
+
+services:
+  # =======================================
+  # Application Service (PHP-FPM)
+  # =======================================
+  app:
+    build:
+      context: .
+      dockerfile: aws/application/containers/app.Dockerfile
+      target: production
+    container_name: mobile-order-app
+    restart: unless-stopped
+    
+    # Security: Run as non-root
+    user: "1000:1000"
+    
+    # Environment variables (secrets managed via Secrets Manager in AWS)
+    environment:
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - LOG_CHANNEL=stderr
+      - LOG_LEVEL=info
+      - SESSION_DRIVER=redis
+      - CACHE_DRIVER=redis
+      - QUEUE_CONNECTION=redis
+      - FILESYSTEM_DISK=local
+      - APP_LOCALE=ja
+      - SUPPORTED_LOCALES=ja,en,zh-TW,zh-CN,ko
+      - QR_MODE=temporary
+      - QR_SESSION_DEFAULT_TTL=10800
+      - CART_TTL=1800
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "php", "/var/www/html/public/healthcheck.php"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    # Volumes for persistence
+    volumes:
+      - app_storage:/var/www/html/storage
+      - app_cache:/var/www/html/bootstrap/cache
+    
+    networks:
+      - mobile-order-network
+    
+    # Logging configuration
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =======================================
+  # Reverse Proxy Service (Nginx)
+  # =======================================
+  nginx:
+    build:
+      context: .
+      dockerfile: aws/application/containers/nginx.Dockerfile
+    container_name: mobile-order-nginx
+    restart: unless-stopped
+    
+    # Security: Run as non-root
+    user: "1000:1000"
+    
+    # Port mapping
+    ports:
+      - "80:8080"
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    
+    # Dependency on app service
+    depends_on:
+      app:
+        condition: service_healthy
+    
+    networks:
+      - mobile-order-network
+    
+    # Logging configuration
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =======================================
+  # Queue Worker Service
+  # =======================================
+  worker:
+    build:
+      context: .
+      dockerfile: aws/application/containers/app.Dockerfile
+      target: production
+    container_name: mobile-order-worker
+    restart: unless-stopped
+    
+    # Worker command
+    command: ["php", "artisan", "queue:work", "--tries=3", "--timeout=90", "--sleep=3", "--max-jobs=1000", "--stop-when-empty"]
+    
+    # Security: Run as non-root
+    user: "1000:1000"
+    
+    # Environment variables (same as app)
+    environment:
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - LOG_CHANNEL=stderr
+      - LOG_LEVEL=info
+      - SESSION_DRIVER=redis
+      - CACHE_DRIVER=redis
+      - QUEUE_CONNECTION=redis
+      - FILESYSTEM_DISK=local
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "php", "artisan", "queue:work", "--stop-when-empty", "--max-jobs=0"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 60s
+    
+    # Volumes for persistence
+    volumes:
+      - app_storage:/var/www/html/storage
+      - app_cache:/var/www/html/bootstrap/cache
+    
+    # Dependency on app service
+    depends_on:
+      app:
+        condition: service_healthy
+    
+    networks:
+      - mobile-order-network
+    
+    # Logging configuration
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# =======================================
+# Volume Definitions
+# =======================================
+volumes:
+  app_storage:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./storage
+  
+  app_cache:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./bootstrap/cache
+
+# =======================================
+# Network Definitions
+# =======================================
+networks:
+  mobile-order-network:
+    driver: bridge
+    name: mobile-order-production
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# =======================================
+# Service Configuration Metadata
+# =======================================
+x-common-environment: &common-environment
+  APP_ENV: production
+  APP_DEBUG: false
+  LOG_CHANNEL: stderr
+  LOG_LEVEL: info
+
+x-resource-limits: &resource-limits
+  deploy:
+    resources:
+      limits:
+        cpus: '1.0'
+        memory: 1G
+      reservations:
+        cpus: '0.5'
+        memory: 512M
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
